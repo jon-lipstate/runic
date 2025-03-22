@@ -8,12 +8,11 @@ import shaper "./shaper"
 import ttf "./ttf"
 
 xmain :: proc() {
-	// Initialize the font shaping engine
 	engine := shaper.create_engine()
 	defer shaper.destroy_engine(engine)
 
 	// Load and register a font
-	font, err := ttf.load_font("./segoeui.ttf") // Update with your font path
+	font, err := ttf.load_font("./segoeui.ttf")
 	defer ttf.destroy_font(&font)
 	if err != .None {
 		fmt.eprintln("Error loading font:", err)
@@ -30,8 +29,8 @@ xmain :: proc() {
 	examples := []string {
 		// "ffi", // Test ligatures
 		// "AVA", // Test kerning
-		"To TO to", // Simple text with potential kerning
-		// "آب", // Arabic text (Right-to-Left)
+		// "To TO to", // Simple text with potential kerning
+		"آب", // Arabic text (Right-to-Left)
 		// "नमस्ते", // Hindi with combining marks
 	}
 

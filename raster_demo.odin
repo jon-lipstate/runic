@@ -11,12 +11,11 @@ import shaper "./shaper"
 import ttf "./ttf"
 
 main :: proc() {
-	// Initialize the font shaping engine
 	engine := shaper.create_engine()
 	defer shaper.destroy_engine(engine)
 
 	// Load and register a font
-	font_path := "./segoeui.ttf" // Update with your font path
+	font_path := "./segoeui.ttf"
 	font, err := ttf.load_font(font_path)
 	if err != .None {
 		fmt.eprintln("Error loading font:", err)
@@ -33,36 +32,27 @@ main :: proc() {
 	fmt.println("Font loaded and registered successfully")
 	fmt.println("Units per em:", font.units_per_em)
 
-	// Test with specific glyphs
 	// test_specific_glyphs(&font)
 
-	// Test text rendering (commented out for now)
 	test_text_rendering(engine, font_id, &font)
 }
 
-// Test rendering of specific glyphs, including iacute
 test_specific_glyphs :: proc(font: ^ttf.Font) {
 	fmt.println("\nTesting specific glyphs...")
 
-	// Get cmap table for glyph lookup
 	cmap_table, has_cmap := ttf.get_table(font, "cmap", ttf.load_cmap_table, ttf.CMAP_Table)
 	if !has_cmap {
 		fmt.println("Error: Could not load cmap table")
 		return
 	}
 
-	// Try to find the iacute glyph
 	iacute_rune: rune = 'í'
 	iacute_glyph, found_iacute := ttf.get_glyph_from_cmap(font, iacute_rune)
 
 	if found_iacute {
 		fmt.printf("Found iacute glyph (ID: %d)\n", iacute_glyph)
-
-		// Render the iacute glyph using our new outline-based approach
 		render_single_glyph(font, iacute_glyph, 72, "TEST_IMAGE.bmp")
 		fmt.println("Done with render_single_glyph")
-		// Also render the individual components of iacute
-		// render_component_glyphs(font, iacute_glyph)
 	} else {
 		fmt.println("Could not find iacute glyph")
 	}
@@ -80,7 +70,6 @@ render_component_glyphs :: proc(font: ^ttf.Font, glyph_id: ttf.Glyph) {
 		return
 	}
 
-	// Initialize component parser
 	parser, parser_ok := ttf.init_component_parser(glyph_entry)
 	if !parser_ok {
 		return
@@ -108,12 +97,9 @@ render_component_glyphs :: proc(font: ^ttf.Font, glyph_id: ttf.Glyph) {
 	}
 }
 
-// Test text rendering with shaping
 test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font: ^ttf.Font) {
-	// Text to shape
 	test_text := "Affinity for Odin-native font shaping."
 
-	// Enable OpenType features
 	features := shaper.create_feature_set(
 		.ccmp, // Glyph composition/decomposition
 		.liga, // Standard ligatures
@@ -123,16 +109,14 @@ test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font:
 		.mark, // Mark positioning
 	)
 
-	// Set size for rendering
-	size_px := f32(48)
+	size_px := f32(72)
 
-	// Shape the text
 	buffer, shape_ok := shaper.shape_text_with_font(
 		engine,
 		font_id,
 		test_text,
-		.latn, // Latin script
-		.ENG, // English language
+		.latn,
+		.dflt,
 		features,
 	)
 	defer shaper.release_buffer(engine, buffer)
@@ -142,24 +126,20 @@ test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font:
 		return
 	}
 
-	// Print info about shaped text
 	fmt.println("\nShaped text:", test_text)
 	fmt.println("Glyph count:", len(buffer.glyphs))
 
-	// Render the complete text
 	fmt.println("\nRendering text...")
 	render_text(font, buffer, size_px, "text.bmp")
 }
 
 
-// Render shaped text to a bitmap
 render_text :: proc(
 	font: ^ttf.Font,
 	buffer: ^shaper.Shaping_Buffer,
 	size_px: f32,
 	filename: string,
 ) -> bool {
-	// Get font metrics
 	hhea_table, has_hhea := ttf.get_table(
 		font,
 		"hhea",

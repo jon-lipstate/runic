@@ -1,6 +1,6 @@
 package ttf
 
-// FIXME: this file is not reviewed and edited; fair # of makes
+// FIXME: this file is not reviewed or edited; fair # of makes; likely slop
 
 // https://docs.microsoft.com/en-us/typography/opentype/spec/base
 // BASE — Baseline Table

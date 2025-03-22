@@ -169,6 +169,7 @@ calculate_bottom_side_bearing :: proc(
 
 // Calculate the vertical origin for a glyph in vertical typesetting
 // Note: This is a simplified approach; some fonts have more complex calculations
+// TODO:
 calculate_vertical_origin :: proc(
 	vmtx: ^OpenType_Vmtx_Table,
 	glyph_id: Glyph,

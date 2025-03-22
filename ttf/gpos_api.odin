@@ -36,7 +36,7 @@ get_pos_lookup_info :: proc(
 		ok = false
 		return
 	}
-
+	// FIXME: dedicate struct, prob existing.. ><
 	lookup_header := transmute(^struct {
 		lookup_type:  GPOS_Lookup_Type,
 		lookup_flags: Lookup_Flags,

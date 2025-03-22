@@ -13,10 +13,9 @@ Glyph_Outline :: struct {
 // A single closed contour
 Contour :: struct {
 	segments:     [dynamic]Path_Segment,
-	is_clockwise: bool, // Direction of the contour
+	is_clockwise: bool,
 }
 
-// Segment types (already defined in your codebase)
 Path_Segment :: union {
 	Line_Segment,
 	Quad_Bezier_Segment,

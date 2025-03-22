@@ -438,7 +438,7 @@ apply_mark_to_mark_subtable :: proc(
 		if base_mark_index == -1 {
 			continue
 		}
-
+		// TODO:
 		// For now, implement a simplified version that just stacks marks
 		// In a full implementation, we would parse the actual anchors
 		changed = true
