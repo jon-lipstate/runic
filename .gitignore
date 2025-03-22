@@ -1,0 +1,12 @@
+*.exe
+*.pdb
+*.ttf
+*.otf
+*.txt
+*.xml
+*.md
+*.py
+*.rdbg
+.VSCodeCounter/
+scraper/
+*.bmp
