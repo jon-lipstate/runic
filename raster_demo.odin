@@ -1,5 +1,6 @@
 package main
 
+import "base:runtime"
 import "core:fmt"
 import "core:math"
 import "core:os"
@@ -10,7 +11,35 @@ import raster "./raster"
 import shaper "./shaper"
 import ttf "./ttf"
 
+import "./perf"
+import "core:prof/spall"
+
+@(instrumentation_enter)
+spall_enter :: proc "contextless" (
+	proc_address, call_site_return_address: rawptr,
+	loc: runtime.Source_Code_Location,
+) {
+	spall._buffer_begin(&perf.spall_ctx, &perf.spall_buffer, "", "", loc)
+}
+
+@(instrumentation_exit)
+spall_exit :: proc "contextless" (
+	proc_address, call_site_return_address: rawptr,
+	loc: runtime.Source_Code_Location,
+) {
+	spall._buffer_end(&perf.spall_ctx, &perf.spall_buffer)
+}
+
 main :: proc() {
+	when perf.ENABLE_SPALL {
+		perf.spall_ctx = spall.context_create("raster.spall")
+		defer spall.context_destroy(&perf.spall_ctx)
+		buffer_backing := make([]u8, spall.BUFFER_DEFAULT_SIZE)
+		perf.spall_buffer = spall.buffer_create(buffer_backing)
+		defer spall.buffer_destroy(&perf.spall_ctx, &perf.spall_buffer)
+		//freq, _ = time.tsc_frequency() // <-- VERY slow call
+	}
+
 	engine := shaper.create_engine()
 	defer shaper.destroy_engine(engine)
 
@@ -29,8 +58,8 @@ main :: proc() {
 		return
 	}
 
-	fmt.println("Font loaded and registered successfully")
-	fmt.println("Units per em:", font.units_per_em)
+	// fmt.println("Font loaded and registered successfully")
+	// fmt.println("Units per em:", font.units_per_em)
 
 	// test_specific_glyphs(&font)
 
@@ -38,11 +67,11 @@ main :: proc() {
 }
 
 test_specific_glyphs :: proc(font: ^ttf.Font) {
-	fmt.println("\nTesting specific glyphs...")
+	// fmt.println("\nTesting specific glyphs...")
 
 	cmap_table, has_cmap := ttf.get_table(font, "cmap", ttf.load_cmap_table, ttf.CMAP_Table)
 	if !has_cmap {
-		fmt.println("Error: Could not load cmap table")
+		// fmt.println("Error: Could not load cmap table")
 		return
 	}
 
@@ -50,9 +79,9 @@ test_specific_glyphs :: proc(font: ^ttf.Font) {
 	iacute_glyph, found_iacute := ttf.get_glyph_from_cmap(font, iacute_rune)
 
 	if found_iacute {
-		fmt.printf("Found iacute glyph (ID: %d)\n", iacute_glyph)
+		// fmt.printf("Found iacute glyph (ID: %d)\n", iacute_glyph)
 		render_single_glyph(font, iacute_glyph, 72, "TEST_IMAGE.bmp")
-		fmt.println("Done with render_single_glyph")
+		// fmt.println("Done with render_single_glyph")
 	} else {
 		fmt.println("Could not find iacute glyph")
 	}
@@ -86,12 +115,12 @@ render_component_glyphs :: proc(font: ^ttf.Font, glyph_id: ttf.Glyph) {
 		component_filename := fmt.tprintf("component_%d.bmp", component.glyph_index)
 		render_single_glyph(font, component.glyph_index, 72, component_filename)
 
-		fmt.printf(
-			"Rendered component %d (Glyph ID: %d) to %s\n",
-			component_index,
-			component.glyph_index,
-			component_filename,
-		)
+		// fmt.printf(
+		// 	"Rendered component %d (Glyph ID: %d) to %s\n",
+		// 	component_index,
+		// 	component.glyph_index,
+		// 	component_filename,
+		// )
 
 		component_index += 1
 	}
@@ -126,10 +155,10 @@ test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font:
 		return
 	}
 
-	fmt.println("\nShaped text:", test_text)
-	fmt.println("Glyph count:", len(buffer.glyphs))
+	// fmt.println("\nShaped text:", test_text)
+	// fmt.println("Glyph count:", len(buffer.glyphs))
 
-	fmt.println("\nRendering text...")
+	// fmt.println("\nRendering text...")
 	render_text(font, buffer, size_px, "text.bmp")
 }
 
@@ -154,11 +183,11 @@ render_text :: proc(
 	ascender := ttf.get_ascender(hhea_table)
 	descender := ttf.get_descender(hhea_table)
 
-	fmt.printf("Font metrics: ascender=%d, descender=%d\n", ascender, descender)
+	// fmt.printf("Font metrics: ascender=%d, descender=%d\n", ascender, descender)
 
 	// Scale factor for font units to pixels
 	scale := size_px / f32(font.units_per_em)
-	fmt.printf("Scale factor: %f\n", scale)
+	// fmt.printf("Scale factor: %f\n", scale)
 
 	// Calculate total advance to determine width
 	total_advance := 0
@@ -166,7 +195,7 @@ render_text :: proc(
 		total_advance += int(buffer.positions[i].x_advance)
 	}
 
-	fmt.printf("Total advance in font units: %d\n", total_advance)
+	// fmt.printf("Total advance in font units: %d\n", total_advance)
 
 	// Padding around text
 	padding := 20
@@ -178,7 +207,7 @@ render_text :: proc(
 	bitmap_width := scaled_width + padding * 2
 	bitmap_height := scaled_height + padding * 2
 
-	fmt.printf("Creating bitmap: %d x %d pixels\n", bitmap_width, bitmap_height)
+	// fmt.printf("Creating bitmap: %d x %d pixels\n", bitmap_width, bitmap_height)
 
 	// Create bitmap
 	bitmap := raster.create_bitmap(bitmap_width, bitmap_height)
@@ -342,7 +371,7 @@ render_single_glyph :: proc(
 		return false
 	}
 
-	fmt.printf("Saved glyph %d to %s\n", glyph_id, filename)
+	// fmt.printf("Saved glyph %d to %s\n", glyph_id, filename)
 
 	// Print component information if this is a composite glyph
 
@@ -353,7 +382,7 @@ render_single_glyph :: proc(
 
 	// Print information about its components if it's a composite
 	if ttf.is_composite_glyph(glyph_entry) {
-		fmt.printf("Glyph %d is a composite glyph with components:\n", glyph_id)
+		// fmt.printf("Glyph %d is a composite glyph with components:\n", glyph_id)
 
 		// Initialize component parser
 		parser, parser_ok := ttf.init_component_parser(glyph_entry)
@@ -369,26 +398,26 @@ render_single_glyph :: proc(
 			}
 
 			// Print component info
-			fmt.printf(
-				"  Component %d: Glyph ID %d, offset (%d, %d)\n",
-				component_index,
-				component.glyph_index,
-				component.x_offset,
-				component.y_offset,
-			)
+			// fmt.printf(
+			// 	"  Component %d: Glyph ID %d, offset (%d, %d)\n",
+			// 	component_index,
+			// 	component.glyph_index,
+			// 	component.x_offset,
+			// 	component.y_offset,
+			// )
 
 			if component.flags.WE_HAVE_A_SCALE {
-				fmt.printf("    Scale: %f\n", component.scale_x)
+				// fmt.printf("    Scale: %f\n", component.scale_x)
 			} else if component.flags.WE_HAVE_AN_X_AND_Y_SCALE {
-				fmt.printf("    Scale X: %f, Scale Y: %f\n", component.scale_x, component.scale_y)
+				// fmt.printf("    Scale X: %f, Scale Y: %f\n", component.scale_x, component.scale_y)
 			} else if component.flags.WE_HAVE_A_TWO_BY_TWO {
-				fmt.printf(
-					"    Matrix: [%f %f; %f %f]\n",
-					component.matrx[0],
-					component.matrx[1],
-					component.matrx[2],
-					component.matrx[3],
-				)
+				// fmt.printf(
+				// 	"    Matrix: [%f %f; %f %f]\n",
+				// 	component.matrx[0],
+				// 	component.matrx[1],
+				// 	component.matrx[2],
+				// 	component.matrx[3],
+				// )
 			}
 
 			component_index += 1

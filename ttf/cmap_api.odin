@@ -74,7 +74,6 @@ get_glyph_by_decomp :: proc(font: ^Font, scratch: ^[dynamic]rune, codepoint: run
 	// 		// the decomposition at a higher level in the shaping process
 
 	// 		// For now, we could return a special value or handle this case differently
-	// 		// based on your engine's design
 	// 		return SPECIAL_DECOMPOSITION_NEEDED_MARKER, true
 	// 	}
 	// }

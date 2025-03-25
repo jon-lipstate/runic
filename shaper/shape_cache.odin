@@ -182,7 +182,7 @@ get_or_create_shape_cache :: proc(
 	// --- Process GPOS lookups ---
 	gpos, has_gpos := ttf.get_table(font, "GPOS", ttf.load_gpos_table, ttf.GPOS_Table)
 	if has_gpos {
-		fmt.println("---- Processing GPOS ----")
+		// fmt.println("---- Processing GPOS ----")
 		// Find language system for GPOS
 		gpos_script_record, gpos_script_offset, gpos_lang_sys_offset, gpos_found :=
 			find_language_system_gpos(gpos, script, language)
@@ -263,9 +263,9 @@ get_or_create_shape_cache :: proc(
 	}
 
 	if has_shaping_data {
-		fmt.println("Created Shaping_Cache")
-		fmt.println("GSUB Lookups", new_cache.gsub_lookups)
-		fmt.println("GPOS Lookups", new_cache.gpos_lookups)
+		// fmt.println("Created Shaping_Cache")
+		// fmt.println("GSUB Lookups", new_cache.gsub_lookups)
+		// fmt.println("GPOS Lookups", new_cache.gpos_lookups)
 		engine.caches[cache_key] = new_cache
 		return &engine.caches[cache_key]
 	}

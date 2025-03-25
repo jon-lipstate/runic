@@ -1,5 +1,6 @@
 package rune
 
+import "../perf"
 import ttf "../ttf"
 import "core:mem"
 import "core:slice"
@@ -50,6 +51,7 @@ Rune :: struct {
 // Create a new Rune font engine instance
 create_engine :: proc(allocator := context.allocator, max_buffers: uint = 4) -> ^Rune {
 	context.allocator = allocator
+
 
 	r := new(Rune, allocator)
 	if r == nil {return nil}

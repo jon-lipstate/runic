@@ -1,4 +1,7 @@
 package ttf
+
+import "core:fmt"
+
 // Extract lookup information from the GSUB table
 get_lookup_info :: proc(
 	gsub: ^GSUB_Table,
@@ -102,4 +105,127 @@ get_class_value :: proc(data: []byte, class_def_offset: uint, glyph_id: Glyph) -
 	}
 
 	return 0 // Default class 0 for invalid format
+}
+
+get_coverage_index :: proc(
+	data: []byte,
+	coverage_offset: uint,
+	glyph_id: Glyph,
+) -> (
+	index: u16,
+	found: bool,
+) {
+	if bounds_check(coverage_offset + 2 > uint(len(data))) {
+		fmt.printf("Bounds check failed at coverage offset %d\n", coverage_offset)
+		return 0, false
+	}
+	be_glyph_id := cast(Raw_Glyph)glyph_id
+
+	format := read_u16(data, coverage_offset)
+	// fmt.printf(
+	// 	"Checking coverage for glyph %d at offset %d, format: %d\n",
+	// 	be_glyph_id,
+	// 	coverage_offset,
+	// 	format,
+	// )
+
+	if format == 1 {
+		// Format A more reliable implementation of Format 1
+		if bounds_check(coverage_offset + 4 > uint(len(data))) {
+			fmt.println("Bounds check failed reading glyph count")
+			return 0, false
+		}
+
+		glyph_count := read_u16(data, coverage_offset + 2)
+		// fmt.printf("Format 1: Glyph count = %d\n", glyph_count)
+
+		// Binary search for the glyph ID
+		low := 0
+		high := int(glyph_count) - 1
+
+		for low <= high {
+			mid := (low + high) / 2
+			glyph_offset := coverage_offset + 4 + uint(mid) * 2
+
+			if bounds_check(glyph_offset + 2 > uint(len(data))) {
+				fmt.println("Bounds check failed in binary search")
+				return 0, false
+			}
+
+			current_glyph := cast(Raw_Glyph)read_u16be(data, glyph_offset)
+			// fmt.printf(
+			// 	"Comparing glyph %d at mid=%d (low=%d,high=%d)\n",
+			// 	current_glyph,
+			// 	mid,
+			// 	low,
+			// 	high,
+			// )
+
+			if be_glyph_id < current_glyph {
+				high = mid - 1
+			} else if be_glyph_id > current_glyph {
+				low = mid + 1
+			} else {
+				// Found the glyph
+				// fmt.printf("Match found at index %d\n", mid)
+				return u16(mid), true
+			}
+		}
+
+		// fmt.println("Glyph not found in Format 1 coverage table")
+	} else if format == 2 {
+		// Format 2: Range records
+		if bounds_check(coverage_offset + 4 > uint(len(data))) {
+			fmt.println("Bounds check failed reading range count")
+			return 0, false
+		}
+
+		range_count := read_u16(data, coverage_offset + 2)
+		// fmt.printf("Format 2: Range count = %d\n", range_count)
+
+		// Binary search for the range containing the glyph ID
+		low := 0
+		high := int(range_count) - 1
+
+		for low <= high {
+			mid := (low + high) / 2
+			range_offset := coverage_offset + 4 + uint(mid) * 6
+
+			if bounds_check(range_offset + 6 > uint(len(data))) {
+				fmt.println("Bounds check failed in range search")
+				return 0, false
+			}
+
+			start_glyph := cast(Raw_Glyph)read_u16be(data, range_offset)
+			end_glyph := cast(Raw_Glyph)read_u16be(data, range_offset + 2)
+			start_coverage_index := read_u16(data, range_offset + 4)
+
+			// fmt.printf(
+			// 	"Checking range %d-%d at mid=%d (low=%d,high=%d)\n",
+			// 	start_glyph,
+			// 	end_glyph,
+			// 	mid,
+			// 	low,
+			// 	high,
+			// )
+
+			if be_glyph_id < start_glyph {
+				high = mid - 1
+			} else if be_glyph_id > end_glyph {
+				low = mid + 1
+			} else {
+				// Found the range, calculate the coverage index
+				index := start_coverage_index + u16(be_glyph_id - start_glyph)
+				// fmt.printf("Match found in range, index = %d\n", index)
+				return index, true
+			}
+		}
+
+		// fmt.println("Glyph not found in Format 2 coverage table")
+	} else {
+		// fmt.printf("Unsupported coverage format: %d\n", format)
+	}
+
+	// Glyph not found in the coverage table
+	return 0, false
 }
