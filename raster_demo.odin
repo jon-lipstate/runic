@@ -1,6 +1,5 @@
 package main
 
-import "base:runtime"
 import "core:fmt"
 import "core:math"
 import "core:os"
@@ -11,15 +10,20 @@ import raster "./raster"
 import shaper "./shaper"
 import ttf "./ttf"
 
-import "./perf"
+import "base:runtime"
 import "core:prof/spall"
+import "core:sync"
+
+spall_ctx: spall.Context
+@(thread_local)
+spall_buffer: spall.Buffer
 
 @(instrumentation_enter)
 spall_enter :: proc "contextless" (
 	proc_address, call_site_return_address: rawptr,
 	loc: runtime.Source_Code_Location,
 ) {
-	spall._buffer_begin(&perf.spall_ctx, &perf.spall_buffer, "", "", loc)
+	spall._buffer_begin(&spall_ctx, &spall_buffer, "", "", loc)
 }
 
 @(instrumentation_exit)
@@ -27,18 +31,20 @@ spall_exit :: proc "contextless" (
 	proc_address, call_site_return_address: rawptr,
 	loc: runtime.Source_Code_Location,
 ) {
-	spall._buffer_end(&perf.spall_ctx, &perf.spall_buffer)
+	spall._buffer_end(&spall_ctx, &spall_buffer)
 }
 
 main :: proc() {
-	when perf.ENABLE_SPALL {
-		perf.spall_ctx = spall.context_create("raster.spall")
-		defer spall.context_destroy(&perf.spall_ctx)
-		buffer_backing := make([]u8, spall.BUFFER_DEFAULT_SIZE)
-		perf.spall_buffer = spall.buffer_create(buffer_backing)
-		defer spall.buffer_destroy(&perf.spall_ctx, &perf.spall_buffer)
-		//freq, _ = time.tsc_frequency() // <-- VERY slow call
-	}
+	spall_ctx = spall.context_create("rune.spall")
+	defer spall.context_destroy(&spall_ctx)
+
+	buffer_backing := make([]u8, spall.BUFFER_DEFAULT_SIZE)
+	defer delete(buffer_backing)
+
+	spall_buffer = spall.buffer_create(buffer_backing, u32(sync.current_thread_id()))
+	defer spall.buffer_destroy(&spall_ctx, &spall_buffer)
+	/////////////////////////////////////////////////////////////////////
+	// defer fmt.println("Main Finished")
 
 	engine := shaper.create_engine()
 	defer shaper.destroy_engine(engine)
@@ -50,7 +56,7 @@ main :: proc() {
 		fmt.eprintln("Error loading font:", err)
 		return
 	}
-	defer ttf.destroy_font(&font)
+	// defer ttf.destroy_font(&font) // <- the engine will delete them; maybe have that be an optional flag
 
 	font_id, ok := shaper.register_font(engine, &font)
 	if !ok {
@@ -61,9 +67,9 @@ main :: proc() {
 	// fmt.println("Font loaded and registered successfully")
 	// fmt.println("Units per em:", font.units_per_em)
 
-	// test_specific_glyphs(&font)
+	test_specific_glyphs(&font)
 
-	test_text_rendering(engine, font_id, &font)
+	// test_text_rendering(engine, font_id, &font)
 }
 
 test_specific_glyphs :: proc(font: ^ttf.Font) {

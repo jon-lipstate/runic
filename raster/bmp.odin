@@ -361,22 +361,22 @@ rasterize_glyph :: proc(
 		center_y = f32(bitmap.height) / 2,
 		bbox     = outline.bounds,
 	}
-	fmt.printf(
-		"Rasterizer Starting State: size_px:%v, scale:%v, ctr_x:%v, ctr_y:%v, bbox:%v\n",
-		rasterizer.size_px,
-		rasterizer.scale,
-		rasterizer.center_x,
-		rasterizer.center_y,
-		rasterizer.bbox,
-	)
+	// fmt.printf(
+	// 	"Rasterizer Starting State: size_px:%v, scale:%v, ctr_x:%v, ctr_y:%v, bbox:%v\n",
+	// 	rasterizer.size_px,
+	// 	rasterizer.scale,
+	// 	rasterizer.center_x,
+	// 	rasterizer.center_y,
+	// 	rasterizer.bbox,
+	// )
 	// Render each contour
 	for &contour, i in outline.contours {
 		// Render all segments in the contour
 		for segment, j in contour.segments {
-			fmt.println("Iter ij", i, j)
+			// fmt.println("Iter ij", i, j)
 			switch s in segment {
 			case ttf.Line_Segment:
-				fmt.println(s)
+				// fmt.println(s)
 				// Transform points to bitmap space
 				x1, y1 := transform_point_f32(&rasterizer, s.a[0], s.a[1])
 				x2, y2 := transform_point_f32(&rasterizer, s.b[0], s.b[1])

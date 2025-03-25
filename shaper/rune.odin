@@ -1,6 +1,5 @@
 package rune
 
-import "../perf"
 import ttf "../ttf"
 import "core:mem"
 import "core:slice"
