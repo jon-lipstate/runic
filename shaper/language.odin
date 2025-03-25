@@ -1,4 +1,4 @@
-package rune
+package shaper
 // TODO: move to ttf??
 // Table Near Bottom has lange tags
 // https://learn.microsoft.com/en-us/typography/script-development/standard

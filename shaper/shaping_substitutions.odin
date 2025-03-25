@@ -1,4 +1,4 @@
-package rune
+package shaper
 
 import ttf "../ttf"
 import "core:fmt"

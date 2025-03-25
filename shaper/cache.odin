@@ -1,4 +1,4 @@
-package rune
+package shaper
 
 import ttf "../ttf"
 import "core:fmt"
@@ -34,6 +34,8 @@ Shaping_Cache :: struct {
 	gpos_script_offset:   uint, // Absolute offset to GPOS script table
 	gpos_lang_sys_offset: uint, // Absolute offset to GPOS language system
 	// coverage_accelerators: map[uint]Coverage_Accelerator, // index is abs offset of entire file
+	cmap_accel:           CMAP_Accelerator,
+	gsub_accel:           GSUB_Accelerator,
 }
 
 // Coverage_Accelerator :: struct {
@@ -80,6 +82,10 @@ get_or_create_shape_cache :: proc(
 ) -> (
 	cache: ^Shaping_Cache,
 ) {
+	// Preload GDEF & htmx to get the 'hit' during cache creation
+	ttf.get_table(font, "GDEF", ttf.load_gdef_table, ttf.GDEF_Table)
+	ttf.get_table(font, "htmx", ttf.load_hmtx_table, ttf.OpenType_Hmtx_Table)
+
 	// Create cache key
 	cache_key := Shaping_Cache_Key {
 		font_id           = font,
@@ -102,6 +108,8 @@ get_or_create_shape_cache :: proc(
 		key = cache_key,
 	}
 	has_shaping_data := false
+
+	build_cmap_accelerator(font, &new_cache, script)
 
 	// --- Process GSUB lookups ---
 	gsub, has_gsub := ttf.get_table(font, "GSUB", ttf.load_gsub_table, ttf.GSUB_Table)

@@ -1,4 +1,4 @@
-package rune
+package shaper
 
 // Can track up to 256 lookups
 Lookup_Set :: struct {

@@ -1,9 +1,9 @@
-package rune
+package shaper
 
 import ttf "../ttf"
 import "core:unicode/utf8"
 
-map_runes_to_glyphs :: proc(font: ^Font, buffer: ^Shaping_Buffer) {
+map_runes_to_glyphs :: proc(font: ^Font, buffer: ^Shaping_Buffer, cache: ^Shaping_Cache = nil) {
 	if buffer == nil || len(buffer.runes) == 0 {return}
 
 	// Ensure we have enough capacity in the glyphs array
@@ -14,6 +14,9 @@ map_runes_to_glyphs :: proc(font: ^Font, buffer: ^Shaping_Buffer) {
 
 	// Determine if we need to process in visual RTL order
 	is_rtl := buffer.direction == .Right_To_Left
+
+	// Check if we have an accelerator
+	has_accelerator := cache != nil && len(cache.cmap_accel.sparse_map) > 0
 
 	// First pass: Map runes to glyphs with basic properties
 	for idx: uint = 0; idx < uint(len(buffer.runes)); idx += 1 {
@@ -31,17 +34,34 @@ map_runes_to_glyphs :: proc(font: ^Font, buffer: ^Shaping_Buffer) {
 			next_codepoint = buffer.runes[next_i]
 			is_variation_selector :=
 				next_codepoint >= 0xFE00 && next_codepoint <= 0xFE0F ||
-				next_codepoint >= 0xE0100 && next_codepoint <= 0xE01EF // VS1-16// VS17-256
+				next_codepoint >= 0xE0100 && next_codepoint <= 0xE01EF
 
 			if is_variation_selector {
-				// Try to get variation glyph
-				gid, found := ttf.get_variation_selector_glyph(font, codepoint, next_codepoint)
-				if found {
+				var_gid: Glyph
+				var_found := false
+
+				// Use accelerator if available
+				if has_accelerator {
+					var_gid, var_found = get_glyph_accelerated(
+						&cache.cmap_accel,
+						codepoint,
+						next_codepoint,
+					)
+				} else {
+					// Fall back to standard lookup
+					var_gid, var_found = ttf.get_variation_selector_glyph(
+						font,
+						codepoint,
+						next_codepoint,
+					)
+				}
+
+				if var_found {
 					// Create the glyph with the variation
 					glyph_info := Glyph_Info {
-						glyph_id = gid,
+						glyph_id = var_gid,
 						cluster  = i,
-						category = ttf.determine_glyph_category(gdef, gid, codepoint),
+						category = ttf.determine_glyph_category(gdef, var_gid, codepoint),
 						flags    = {},
 					}
 					append(&buffer.glyphs, glyph_info)
@@ -55,17 +75,22 @@ map_runes_to_glyphs :: proc(font: ^Font, buffer: ^Shaping_Buffer) {
 		}
 
 		// Standard glyph mapping
-		gid, ok := ttf.get_glyph_from_cmap(font, codepoint)
+		gid: Glyph
+		ok: bool
+
+		// Use accelerator if available
+		if has_accelerator {
+			gid, ok = get_glyph_accelerated(&cache.cmap_accel, codepoint)
+		} else {
+			gid, ok = ttf.get_glyph_from_cmap(font, codepoint)
+		}
 
 		// Try decomposition if standard mapping fails
 		if !ok {
 			clear(&buffer.scratch.decomposition)
 			// Try decomposition for complex characters
 			if ttf.get_glyph_by_decomp(font, &buffer.scratch.decomposition, codepoint) {
-				// TODO: 
-				// Handle decomposition here - would require special cluster management
-				// For now, we'll just use the standard missing glyph approach
-				// Future: Handle inserting multiple glyphs from decomposition
+				// TODO: Handle decomposition
 			}
 		}
 
@@ -89,7 +114,19 @@ map_runes_to_glyphs :: proc(font: ^Font, buffer: ^Shaping_Buffer) {
 
 		// Insert dotted circle if needed
 		if needs_dotted_circle {
-			dotted_circle_gid, has_dotted_circle := ttf.get_glyph_from_cmap(font, 0x25CC) // DOTTED CIRCLE
+			dotted_circle_gid: Glyph
+			has_dotted_circle: bool
+
+			// Use accelerator if available
+			if has_accelerator {
+				dotted_circle_gid, has_dotted_circle = get_glyph_accelerated(
+					&cache.cmap_accel,
+					0x25CC,
+				)
+			} else {
+				dotted_circle_gid, has_dotted_circle = ttf.get_glyph_from_cmap(font, 0x25CC)
+			}
+
 			if has_dotted_circle {
 				dotted_circle := Glyph_Info {
 					glyph_id = dotted_circle_gid,
@@ -129,3 +166,5 @@ map_runes_to_glyphs :: proc(font: ^Font, buffer: ^Shaping_Buffer) {
 		}
 	}
 }
+
+/////////////////////////////////////////////////////////////////////////

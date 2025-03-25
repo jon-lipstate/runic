@@ -1,4 +1,4 @@
-package rune
+package shaper
 
 import "base:intrinsics"
 // TODO: move to ttf??

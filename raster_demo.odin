@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:math"
+import "core:mem"
 import "core:os"
 import "core:strings"
 import "core:unicode/utf8"
@@ -34,11 +35,31 @@ spall_exit :: proc "contextless" (
 	spall._buffer_end(&spall_ctx, &spall_buffer)
 }
 
+tmain :: proc() {
+	when ODIN_DEBUG {
+		track: mem.Tracking_Allocator
+		mem.tracking_allocator_init(&track, context.allocator)
+		context.allocator = mem.tracking_allocator(&track)
+
+		defer {
+			if len(track.allocation_map) > 0 {
+				fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
+				for _, entry in track.allocation_map {
+					fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
+				}
+			}
+			mem.tracking_allocator_destroy(&track)
+		}
+	}
+
+	main()
+}
+
 main :: proc() {
 	spall_ctx = spall.context_create("rune.spall")
 	defer spall.context_destroy(&spall_ctx)
 
-	buffer_backing := make([]u8, spall.BUFFER_DEFAULT_SIZE)
+	buffer_backing := make([]u8, spall.BUFFER_DEFAULT_SIZE * 1024)
 	defer delete(buffer_backing)
 
 	spall_buffer = spall.buffer_create(buffer_backing, u32(sync.current_thread_id()))
@@ -67,9 +88,9 @@ main :: proc() {
 	// fmt.println("Font loaded and registered successfully")
 	// fmt.println("Units per em:", font.units_per_em)
 
-	test_specific_glyphs(&font)
+	// test_specific_glyphs(&font)
 
-	// test_text_rendering(engine, font_id, &font)
+	test_text_rendering(engine, font_id, &font)
 }
 
 test_specific_glyphs :: proc(font: ^ttf.Font) {
@@ -133,7 +154,36 @@ render_component_glyphs :: proc(font: ^ttf.Font, glyph_id: ttf.Glyph) {
 }
 
 test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font: ^ttf.Font) {
-	test_text := "Affinity for Odin-native font shaping."
+	// test_text := "Affinity for Odin-native font shaping."
+	test_text := `
+	// GenerateAnimalURL creates a URL for accessing the animal record
+func GenerateAnimalURL(ctx context.Context, societyID int, animalID int, registryID string, isRef bool) (string, error) {
+    // Get society slug
+    var societySlug string
+    err := db.Conn.QueryRow(ctx, '
+        SELECT slug FROM societies WHERE society_id = $1
+    ', societyID).Scan(&societySlug)
+
+    if err != nil {
+        return "", err
+    }
+
+    // For registered animals with a registry ID
+    if registryID != "" {
+        if isRef {
+            // Reference animals use a different URL pattern
+            return fmt.Sprintf("https://pedigree.dev/#/%s/animals/ref/%s", societySlug, registryID), nil
+        } else {
+            // Directly registered animals
+            return fmt.Sprintf("https://pedigree.dev/#/%s/animals/%s", societySlug, registryID), nil
+        }
+    }
+
+    // For animals without registration IDs
+    return fmt.Sprintf("https://pedigree.dev/#/%s/animals/id/%d", societySlug, animalID), nil
+}
+`
+
 
 	features := shaper.create_feature_set(
 		.ccmp, // Glyph composition/decomposition
@@ -165,7 +215,7 @@ test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font:
 	// fmt.println("Glyph count:", len(buffer.glyphs))
 
 	// fmt.println("\nRendering text...")
-	render_text(font, buffer, size_px, "text.bmp")
+	// render_text(font, buffer, size_px, "text.bmp")
 }
 
 

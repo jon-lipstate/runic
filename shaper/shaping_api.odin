@@ -1,4 +1,4 @@
-package rune
+package shaper
 
 import ttf "../ttf"
 import "core:fmt"
@@ -73,7 +73,7 @@ shape_with_cache :: proc(
 
 	// Map runes to initial glyphs (1:1 mapping)
 	reserve(&buffer.glyphs, len(buffer.runes))
-	map_runes_to_glyphs(font, buffer)
+	map_runes_to_glyphs(font, buffer, cache)
 	// fmt.println("Buffer Settings", buffer.script, buffer.language, buffer.direction)
 	// If cache couldn't be created, fall back to basic shaping
 	if cache == nil {

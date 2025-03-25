@@ -1,4 +1,4 @@
-package rune
+package shaper
 // TODO: move to ttf??
 import ttf "../ttf"
 import "core:reflect"
