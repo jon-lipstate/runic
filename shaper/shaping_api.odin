@@ -76,6 +76,11 @@ shape_with_cache :: proc(
 	reserve(&buffer.glyphs, len(buffer.runes))
 	map_runes_to_glyphs(font, buffer, cache)
 
+
+	// for gi in buffer.glyphs {
+	// 	fmt.printf("%v -> %v \n", buffer.runes[gi.cluster], gi.glyph_id)
+	// }
+
 	// If cache couldn't be created, fall back to basic shaping
 	if cache == nil {
 		return shape_text_basic_with_buffer(font, buffer)
@@ -86,7 +91,6 @@ shape_with_cache :: proc(
 	if has_gsub && len(cache.gsub_lookups) > 0 {
 		// Check if we have acceleration structures built
 		if len(cache.gsub_accel.single_subst) > 0 || len(cache.gsub_accel.ligature_subst) > 0 {
-			// Use accelerated GSUB processing
 			apply_gsub_with_accelerator(font, buffer, cache)
 		} else {
 			// Fall back to standard lookup application

@@ -114,75 +114,9 @@ test_specific_glyphs :: proc(font: ^ttf.Font) {
 	}
 }
 
-// Render the individual components of a composite glyph
-render_component_glyphs :: proc(font: ^ttf.Font, glyph_id: ttf.Glyph) {
-	glyf_table, has_glyf := ttf.get_table(font, "glyf", ttf.load_glyf_table, ttf.Glyf_Table)
-	if !has_glyf {
-		return
-	}
-
-	glyph_entry, got_entry := ttf.get_glyf_entry(glyf_table, glyph_id)
-	if !got_entry || glyph_entry.is_empty || !ttf.is_composite_glyph(glyph_entry) {
-		return
-	}
-
-	parser, parser_ok := ttf.init_component_parser(glyph_entry)
-	if !parser_ok {
-		return
-	}
-
-	component_index := 0
-	for {
-		component, comp_ok := ttf.next_component(&parser)
-		if !comp_ok {
-			break
-		}
-
-		// Render each component separately
-		component_filename := fmt.tprintf("component_%d.bmp", component.glyph_index)
-		render_single_glyph(font, component.glyph_index, 72, component_filename)
-
-		// fmt.printf(
-		// 	"Rendered component %d (Glyph ID: %d) to %s\n",
-		// 	component_index,
-		// 	component.glyph_index,
-		// 	component_filename,
-		// )
-
-		component_index += 1
-	}
-}
-
 test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font: ^ttf.Font) {
 	// test_text := "Affinity for Odin-native font shaping."
-	test_text := `
-	// GenerateAnimalURL creates a URL for accessing the animal record
-func GenerateAnimalURL(ctx context.Context, societyID int, animalID int, registryID string, isRef bool) (string, error) {
-    // Get society slug
-    var societySlug string
-    err := db.Conn.QueryRow(ctx, '
-        SELECT slug FROM societies WHERE society_id = $1
-    ', societyID).Scan(&societySlug)
-
-    if err != nil {
-        return "", err
-    }
-
-    // For registered animals with a registry ID
-    if registryID != "" {
-        if isRef {
-            // Reference animals use a different URL pattern
-            return fmt.Sprintf("https://pedigree.dev/#/%s/animals/ref/%s", societySlug, registryID), nil
-        } else {
-            // Directly registered animals
-            return fmt.Sprintf("https://pedigree.dev/#/%s/animals/%s", societySlug, registryID), nil
-        }
-    }
-
-    // For animals without registration IDs
-    return fmt.Sprintf("https://pedigree.dev/#/%s/animals/id/%d", societySlug, animalID), nil
-}
-`
+	test_text := `Toffi`
 
 
 	features := shaper.create_feature_set(
@@ -215,10 +149,13 @@ func GenerateAnimalURL(ctx context.Context, societyID int, animalID int, registr
 	}
 
 	// fmt.println("\nShaped text:", test_text)
+	// for gi in buffer.glyphs {
+	// 	fmt.println(gi)
+	// }
 	// fmt.println("Glyph count:", len(buffer.glyphs))
 
 	// fmt.println("\nRendering text...")
-	// render_text(font, buffer, size_px, "text.bmp")
+	render_text(font, buffer, size_px, "text.bmp")
 }
 
 

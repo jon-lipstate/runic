@@ -363,9 +363,7 @@ accelerate_ligature_substitution :: proc(
 	}
 
 	format := ttf.read_u16(gsub.raw_data, subtable_offset)
-	if format != 1 {
-		return // Only format 1 is defined for ligatures
-	}
+	if format != 1 {return} 	// Only format 1 is defined for ligatures
 
 	ligature_set_count := ttf.read_u16(gsub.raw_data, subtable_offset + 4)
 	ligature_set_offset := subtable_offset + 6
@@ -380,14 +378,45 @@ accelerate_ligature_substitution :: proc(
 	// Process the coverage as starting glyphs for ligatures
 	for glyph, _ in accel.coverage_digest[coverage_offset].direct_map {
 		lig_accel.starts_ligature[glyph] = true
+
+		// Initialize empty dynamic array for this glyph
+		lig_accel.ligature_map[glyph] = make([dynamic]Ligature_Sequence)
 	}
 
 	// Process each ligature set
-	i := 0
-	for glyph, _ in lig_accel.starts_ligature {
-		if i >= int(ligature_set_count) ||
-		   bounds_check(ligature_set_offset + uint(i) * 2 >= uint(len(gsub.raw_data))) {
-			i += 1
+	for i := 0; i < int(ligature_set_count); i += 1 {
+		if bounds_check(ligature_set_offset + uint(i) * 2 >= uint(len(gsub.raw_data))) {
+			continue
+		}
+
+		// Get coverage glyph based on coverage index
+		coverage_iter, coverage_ok := ttf.into_coverage_iter(gsub, 0, u16(coverage_offset))
+		if !coverage_ok {
+			continue
+		}
+
+		// Find the glyph for this coverage index
+		glyph: Glyph
+		found := false
+
+		glyph_count := 0
+		for entry in ttf.iter_coverage_entry(&coverage_iter) {
+			if glyph_count == i {
+				switch e in entry {
+				case ttf.Coverage_Format1_Entry:
+					glyph = Glyph(e.glyph)
+					found = true
+					break
+				case ttf.Coverage_Format2_Entry:
+					glyph = Glyph(u16(e.start) + u16(e.start_index))
+					found = true
+					break
+				}
+			}
+			glyph_count += 1
+		}
+
+		if !found {
 			continue
 		}
 
@@ -396,7 +425,6 @@ accelerate_ligature_substitution :: proc(
 		abs_ligature_set_offset := subtable_offset + uint(ligature_set_ptr)
 
 		if bounds_check(abs_ligature_set_offset + 2 >= uint(len(gsub.raw_data))) {
-			i += 1
 			continue
 		}
 
@@ -448,12 +476,18 @@ accelerate_ligature_substitution :: proc(
 				components = components,
 				ligature   = ligature_glyph,
 			}
-			seq_arr := &lig_accel.ligature_map[glyph]
-			// Add to mapping
-			append(seq_arr, sequence)
-		}
 
-		i += 1
+			// Add to mapping
+			seq_arr := &lig_accel.ligature_map[glyph]
+			append(seq_arr, sequence)
+
+			// fmt.printf(
+			// 	"Adding ligature sequence for glyph %d: components %v -> ligature %d\n",
+			// 	glyph,
+			// 	components,
+			// 	ligature_glyph,
+			// )
+		}
 	}
 
 	accel.ligature_subst[lookup_idx] = lig_accel
@@ -486,13 +520,13 @@ accelerate_extension_substitution :: proc(
 		extension_offset = abs_extension_offset,
 		is_processed     = false, // Will be processed later
 	}
-	fmt.printf(
-		"Extension: lookup_idx=%d, type=%v, offset=%d, absolute=%d\n",
-		lookup_idx,
-		extension_lookup_type,
-		extension_offset,
-		abs_extension_offset,
-	)
+	// fmt.printf(
+	// 	"Extension: lookup_idx=%d, type=%v, offset=%d, absolute=%d\n",
+	// 	lookup_idx,
+	// 	extension_lookup_type,
+	// 	extension_offset,
+	// 	abs_extension_offset,
+	// )
 
 	accel.extension_map[lookup_idx] = ext_info
 }
@@ -504,19 +538,15 @@ build_feature_lookup_map :: proc(
 	cache: ^Shaping_Cache,
 	accel: ^GSUB_Accelerator,
 ) {
-	// Iterate through all features
 	feature_iter, iter_ok := ttf.into_feature_iter_gsub(gsub, cache.gsub_lang_sys_offset)
 	if !iter_ok {return}
 
 	for feature_index, record, feature_offset in ttf.iter_feature_gsub(&feature_iter) {
-		// Get feature tag
 		feature_tag := Feature_Tag(ttf.tag_to_u32(record.feature_tag))
 
-		// Get lookup indices for this feature
 		lookup_iter, lookup_ok := ttf.into_lookup_iter(gsub.raw_data, feature_offset)
 		if !lookup_ok {continue}
 
-		// Collect all lookup indices for this feature
 		lookups := make([dynamic]u16)
 		for lookup_index in ttf.iter_lookup_index(&lookup_iter) {
 			append(&lookups, lookup_index)
@@ -540,7 +570,7 @@ is_glyph_in_coverage :: proc(digest: Coverage_Digest, glyph: Glyph) -> bool {
 		return false
 	}
 
-	// Potential match, check more precisely
+	// Potential match, check for exact match
 	if len(digest.direct_map) > 0 {
 		// For small coverage sets, check direct map
 		if _, in_coverage := digest.direct_map[glyph]; in_coverage {
@@ -565,7 +595,6 @@ is_glyph_in_coverage :: proc(digest: Coverage_Digest, glyph: Glyph) -> bool {
 	return false
 }
 
-// Modified apply_gsub_with_accelerator to handle extension lookups
 apply_gsub_with_accelerator :: proc(
 	font: ^Font,
 	buffer: ^Shaping_Buffer,
@@ -600,18 +629,32 @@ apply_gsub_with_accelerator :: proc(
 		case .Single:
 			if single_accel, has_accel := accel.single_subst[lookup_idx]; has_accel {
 				apply_accelerated_single_subst(buffer, single_accel, lookup_flags)
+			} else {
+				apply_lookup_fallback(gsub, buffer, lookup_idx, lookup_type, lookup_flags, accel)
 			}
-
 		case .Ligature:
 			if lig_accel, has_accel := accel.ligature_subst[lookup_idx]; has_accel {
 				apply_accelerated_ligature_subst(buffer, lig_accel, lookup_flags)
+			} else {
+				apply_lookup_fallback(gsub, buffer, lookup_idx, lookup_type, lookup_flags, accel)
 			}
 
 		// Other cases fall back to standard implementation
 		case:
-			if lookup_type == .Extension {
-				// For extensions, apply using the resolved subtable
-				ext_info := accel.extension_map[lookup_idx]
+			apply_lookup_fallback(gsub, buffer, lookup_idx, lookup_type, lookup_flags, accel)
+		}
+	}
+	apply_lookup_fallback :: proc(
+		gsub: ^ttf.GSUB_Table,
+		buffer: ^Shaping_Buffer,
+		lookup_idx: u16,
+		lookup_type: ttf.GSUB_Lookup_Type,
+		lookup_flags: ttf.Lookup_Flags,
+		accel: ^GSUB_Accelerator,
+	) {
+		if lookup_type == .Extension {
+			// For extensions, apply using the resolved subtable
+			if ext_info, has_ext := accel.extension_map[lookup_idx]; has_ext {
 				apply_standard_lookup_at_offset(
 					gsub,
 					buffer,
@@ -621,11 +664,14 @@ apply_gsub_with_accelerator :: proc(
 					ext_info.extension_offset,
 				)
 			} else {
+				// Fall back to regular extension handling
 				apply_lookup(gsub, lookup_idx, lookup_type, lookup_flags, buffer)
 			}
+		} else {
+			// Regular lookup
+			apply_lookup(gsub, lookup_idx, lookup_type, lookup_flags, buffer)
 		}
 	}
-
 	return true
 }
 
@@ -638,16 +684,9 @@ apply_accelerated_single_subst :: proc(
 	for i := 0; i < len(buffer.glyphs); i += 1 {
 		glyph_info := &buffer.glyphs[i]
 
-		// Skip glyphs based on lookup flags
-		if should_skip_glyph(glyph_info.category, lookup_flags) {
-			continue
-		}
+		if should_skip_glyph(glyph_info.category, lookup_flags) {continue}
+		if !is_glyph_in_coverage(accel.coverage, glyph_info.glyph_id) {continue}
 
-		if !is_glyph_in_coverage(accel.coverage, glyph_info.glyph_id) {
-			continue
-		}
-
-		// Fast lookup using mapping
 		if subst_glyph, found := accel.mapping[glyph_info.glyph_id]; found {
 			glyph_info.glyph_id = subst_glyph
 			glyph_info.flags += {.Substituted}
@@ -661,95 +700,119 @@ apply_accelerated_ligature_subst :: proc(
 	accel: Ligature_Subst_Accelerator,
 	lookup_flags: ttf.Lookup_Flags,
 ) {
-	i := 0
-	for i < len(buffer.glyphs) {
-		glyph_info := &buffer.glyphs[i]
+	// Process each glyph as a potential ligature start
+	pos := 0
+	for pos < len(buffer.glyphs) {
+		first_glyph := &buffer.glyphs[pos]
 
-		// Skip glyphs based on lookup flags
-		if should_skip_glyph(glyph_info.category, lookup_flags) {
-			i += 1
+		// Skip if this glyph should be ignored based on lookup flags
+		if should_skip_glyph(first_glyph.category, lookup_flags) {
+			pos += 1
 			continue
 		}
 
 		// Quick check if this glyph can start a ligature
-		if !accel.starts_ligature[glyph_info.glyph_id] {
-			i += 1
+		if !accel.starts_ligature[first_glyph.glyph_id] {
+			pos += 1
 			continue
 		}
 
-		// Check for ligature matches
-		best_match_length := 0
-		ligature_glyph: Glyph
+		// Try to find a ligature match for this glyph
+		ligature_found := false
 
-		// Check each potential ligature sequence for this starting glyph
-		if sequences, has_sequences := accel.ligature_map[glyph_info.glyph_id]; has_sequences {
+		if sequences, has_sequences := accel.ligature_map[first_glyph.glyph_id]; has_sequences {
 			for sequence in sequences {
-				// Check if we have enough glyphs left
-				if i + len(sequence.components) > len(buffer.glyphs) {
-					continue
-				}
+				// Try to match this ligature sequence
+				matched := true
+				curr_pos := pos + 1
+				next_comp := 1 // Start matching from second component
 
-				// Try to match the sequence
-				match := true
-				match_pos := 0
+				// Try to match remaining components
+				for next_comp < len(sequence.components) {
+					// Skip glyphs that should be ignored based on lookup flags
+					for curr_pos < len(buffer.glyphs) {
+						if curr_pos >= len(buffer.glyphs) {
+							matched = false
+							break
+						}
 
-				for j := 0; j < len(sequence.components); j += 1 {
-					// Find next non-skipped glyph
-					for match_pos + j < len(buffer.glyphs) &&
-					    should_skip_glyph(
-						    buffer.glyphs[i + match_pos + j].category,
-						    lookup_flags,
-					    ) {
-						match_pos += 1
+						if !should_skip_glyph(buffer.glyphs[curr_pos].category, lookup_flags) {
+							break
+						}
+						curr_pos += 1
 					}
 
-					// Check if we ran out of glyphs
-					if i + match_pos + j >= len(buffer.glyphs) {
-						match = false
+					// Check if we've gone beyond the end of the buffer
+					if curr_pos >= len(buffer.glyphs) {
+						matched = false
 						break
 					}
 
-					// Check if glyph matches
-					if buffer.glyphs[i + match_pos + j].glyph_id != sequence.components[j] {
-						match = false
+					// Check if the current glyph matches this component
+					if buffer.glyphs[curr_pos].glyph_id != sequence.components[next_comp] {
+						matched = false
 						break
 					}
+
+					// Move to next component
+					next_comp += 1
+					curr_pos += 1
 				}
 
-				// If we found a match and it's longer than previous matches
-				if match && match_pos + len(sequence.components) > best_match_length {
-					best_match_length = match_pos + len(sequence.components)
-					ligature_glyph = sequence.ligature
+				if matched {
+					// We found a ligature match - apply it
+					component_count := len(sequence.components)
+
+					// Get earliest cluster value among the components
+					min_cluster := first_glyph.cluster
+					for i := pos + 1; i < pos + component_count; i += 1 {
+						if i >= len(buffer.glyphs) {
+							break
+						}
+						if buffer.glyphs[i].cluster < min_cluster {
+							min_cluster = buffer.glyphs[i].cluster
+						}
+					}
+
+					// Create component info for the ligature
+					ligature_info := Ligature_Info {
+						component_index  = 0,
+						total_components = u8(component_count),
+						original_glyph   = first_glyph.glyph_id,
+					}
+
+					// Replace the first glyph with the ligature
+					first_glyph.glyph_id = sequence.ligature
+					first_glyph.cluster = min_cluster
+					first_glyph.category = .Ligature
+					first_glyph.flags += {.Substituted, .Ligated}
+					first_glyph.ligature_components = ligature_info
+
+					if component_count > 1 {
+						// Safety check
+						if pos + component_count > len(buffer.glyphs) {
+							component_count = len(buffer.glyphs) - pos
+						}
+
+						// Remove components in reverse order to avoid index shifting issues
+						for i := component_count - 1; i > 0; i -= 1 {
+							component_pos := pos + i
+							if component_pos < len(buffer.glyphs) {
+								ordered_remove(&buffer.glyphs, component_pos)
+							}
+						}
+					}
+
+					ligature_found = true
+					break // Stop after first match
 				}
 			}
 		}
 
-		// Apply the best ligature match if found
-		if best_match_length > 0 {
-			// Replace first glyph with ligature
-			glyph_info.glyph_id = ligature_glyph
-			glyph_info.flags += {.Ligated, .Substituted}
-
-			// Mark component glyphs (will be removed later)
-			for j := 1; j < best_match_length; j += 1 {
-				buffer.glyphs[i + j].flags += {.Ligated}
-			}
-
-			// Skip past the ligature components
-			i += best_match_length
-		} else {
-			// No match, move to next glyph
-			i += 1
-		}
-	}
-
-	// Remove ligature components (glyphs marked with .Ligated but not .Substituted)
-	i = 0
-	for i < len(buffer.glyphs) {
-		if .Ligated in buffer.glyphs[i].flags && .Substituted not_in buffer.glyphs[i].flags {
-			ordered_remove(&buffer.glyphs, i)
-		} else {
-			i += 1
+		// If we found a ligature, we don't advance pos since the new ligature
+		// might participate in another ligature in the next iteration
+		if !ligature_found {
+			pos += 1
 		}
 	}
 }
