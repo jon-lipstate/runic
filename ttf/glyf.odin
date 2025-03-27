@@ -37,47 +37,83 @@ Glyph_Extents :: struct {
 	height:    i16, // Height
 }
 
-Simple_Glyph_Flag :: bit_field u8 {
-	ON_CURVE_POINT: bool | 1, // 1 = on-curve, 0 = off-curve
-	X_SHORT_VECTOR: bool | 1, // 1 = x-coord is 1 byte, 0 = x-coord is 2 bytes
-	Y_SHORT_VECTOR: bool | 1, // 1 = y-coord is 1 byte, 0 = y-coord is 2 bytes
-	REPEAT_FLAG:    bool | 1, // 1 = next byte is repeat count
-	X_IS_SAME:      bool | 1, // 1 = x-coord is same as previous (if X_SHORT=0), else x-coord is positive (1) or negative (0)
-	Y_IS_SAME:      bool | 1, // 1 = y-coord is same as previous (if Y_SHORT=0), else y-coord is positive (1) or negative (0)
-	OVERLAP_SIMPLE: bool | 1, // 1 = contour overlaps other contours
-	RESERVED:       bool | 1, // Reserved, set to 0
-}
-// Simple_Glyph_Flag :: enum u8 {
-// 	ON_CURVE_POINT,
-// 	X_SHORT_VECTOR,
-// 	Y_SHORT_VECTOR,
-// 	REPEAT_FLAG,
-// 	X_IS_SAME,
-// 	Y_IS_SAME,
-// 	OVERLAP_SIMPLE,
-// 	RESERVED,
+// Simple_Glyph_Flag :: bit_field u8 {
+// 	ON_CURVE_POINT: bool | 1, // 1 = on-curve, 0 = off-curve
+// 	X_SHORT_VECTOR: bool | 1, // 1 = x-coord is 1 byte, 0 = x-coord is 2 bytes
+// 	Y_SHORT_VECTOR: bool | 1, // 1 = y-coord is 1 byte, 0 = y-coord is 2 bytes
+// 	REPEAT_FLAG:    bool | 1, // 1 = next byte is repeat count
+// 	X_IS_SAME:      bool | 1, // 1 = x-coord is same as previous (if X_SHORT=0), else x-coord is positive (1) or negative (0)
+// 	Y_IS_SAME:      bool | 1, // 1 = y-coord is same as previous (if Y_SHORT=0), else y-coord is positive (1) or negative (0)
+// 	OVERLAP_SIMPLE: bool | 1, // 1 = contour overlaps other contours
+// 	RESERVED:       bool | 1, // Reserved, set to 0
 // }
+Simple_Glyph_Flag :: enum u8 {
+	ON_CURVE_POINT,
+	X_SHORT_VECTOR,
+	Y_SHORT_VECTOR,
+	REPEAT_FLAG,
+	X_IS_SAME,
+	Y_IS_SAME,
+	OVERLAP_SIMPLE,
+}
 
-// Simple_Glyph_Flags :: bit_set[Simple_Glyph_Flag;u8]
+Simple_Glyph_Flags :: bit_set[Simple_Glyph_Flag;u8]
+
+read_simple_glyph_flags :: proc(f: byte) -> Simple_Glyph_Flags {
+	flags := Simple_Glyph_Flags{}
+	if (f & 0x01) != 0 {flags += {.ON_CURVE_POINT}}
+	if (f & 0x02) != 0 {flags += {.X_SHORT_VECTOR}}
+	if (f & 0x04) != 0 {flags += {.Y_SHORT_VECTOR}}
+	if (f & 0x08) != 0 {flags += {.REPEAT_FLAG}}
+	if (f & 0x10) != 0 {flags += {.X_IS_SAME}}
+	if (f & 0x20) != 0 {flags += {.Y_IS_SAME}}
+	if (f & 0x40) != 0 {flags += {.OVERLAP_SIMPLE}}
+	return flags
+}
 
 // Composite glyph flags
-Composite_Glyph_Flag :: bit_field u16be {
-	ARG_1_AND_2_ARE_WORDS:     bool  | 1, // 1 = args are words, 0 = args are bytes
-	ARGS_ARE_XY_VALUES:        bool  | 1, // 1 = args are x,y values, 0 = args are points
-	ROUND_XY_TO_GRID:          bool  | 1, // 1 = round x,y to grid
-	WE_HAVE_A_SCALE:           bool  | 1, // 1 = there is a scale
-	RESERVED:                  bool  | 1, // Reserved, set to 0
-	MORE_COMPONENTS:           bool  | 1, // 1 = more components follow
-	WE_HAVE_AN_X_AND_Y_SCALE:  bool  | 1, // 1 = we have an x and y scale
-	WE_HAVE_A_TWO_BY_TWO:      bool  | 1, // 1 = we have a 2x2 transformation
-	WE_HAVE_INSTRUCTIONS:      bool  | 1, // 1 = we have instructions
-	USE_MY_METRICS:            bool  | 1, // 1 = use metrics from this component
-	OVERLAP_COMPOUND:          bool  | 1, // 1 = this component overlaps others
-	SCALED_COMPONENT_OFFSET:   bool  | 1, // 1 = component offset scaled
-	UNSCALED_COMPONENT_OFFSET: bool  | 1, // 1 = component offset unscaled
-	RESERVED2:                 u16be | 3, // Reserved bits
+Composite_Glyph_Flag :: enum u16 {
+	ARG_1_AND_2_ARE_WORDS, // 1 = args are words, 0 = args are bytes
+	ARGS_ARE_XY_VALUES, // 1 = args are x,y values, 0 = args are points
+	ROUND_XY_TO_GRID, // 1 = round x,y to grid
+	WE_HAVE_A_SCALE, // 1 = there is a scale
+	// RESERVED, // Reserved, set to 0
+	MORE_COMPONENTS, // 1 = more components follow
+	WE_HAVE_AN_X_AND_Y_SCALE, // 1 = we have an x and y scale
+	WE_HAVE_A_TWO_BY_TWO, // 1 = we have a 2x2 transformation
+	WE_HAVE_INSTRUCTIONS, // 1 = we have instructions
+	USE_MY_METRICS, // 1 = use metrics from this component
+	OVERLAP_COMPOUND, // 1 = this component overlaps others
+	SCALED_COMPONENT_OFFSET, // 1 = component offset scaled
+	UNSCALED_COMPONENT_OFFSET, // 1 = component offset unscaled
+	// RESERVED2 bits (14-15) are omitted as they're reserved
 }
 
+Composite_Glyph_Flags :: bit_set[Composite_Glyph_Flag;u16]
+
+read_composite_glyph_flags :: proc(f: u16) -> Composite_Glyph_Flags {
+	flags := Composite_Glyph_Flags{}
+
+	// Check each bit and set the corresponding flag
+	if (f & 0x0001) != 0 {flags += {.ARG_1_AND_2_ARE_WORDS}}
+	if (f & 0x0002) != 0 {flags += {.ARGS_ARE_XY_VALUES}}
+	if (f & 0x0004) != 0 {flags += {.ROUND_XY_TO_GRID}}
+	if (f & 0x0008) != 0 {flags += {.WE_HAVE_A_SCALE}}
+	// if (f & 0x0010) != 0 {flags += {.RESERVED}}
+	if (f & 0x0020) != 0 {flags += {.MORE_COMPONENTS}}
+	if (f & 0x0040) != 0 {flags += {.WE_HAVE_AN_X_AND_Y_SCALE}}
+	if (f & 0x0080) != 0 {flags += {.WE_HAVE_A_TWO_BY_TWO}}
+	if (f & 0x0100) != 0 {flags += {.WE_HAVE_INSTRUCTIONS}}
+	if (f & 0x0200) != 0 {flags += {.USE_MY_METRICS}}
+	if (f & 0x0400) != 0 {flags += {.OVERLAP_COMPOUND}}
+	if (f & 0x0800) != 0 {flags += {.SCALED_COMPONENT_OFFSET}}
+	if (f & 0x1000) != 0 {flags += {.UNSCALED_COMPONENT_OFFSET}}
+	// Bits 14-15 (0x6000) are reserved and not mapped to enum values
+
+	return flags
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////
 
 load_glyf_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	glyf_data, ok := get_table_data(font, "glyf")
@@ -102,15 +138,14 @@ destroy_glyf_table :: proc(data: rawptr) {
 	free(glyf)
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////
+
 // Get a glyph's data from the glyf table
 get_glyf_entry :: proc(glyf: ^Glyf_Table, glyph_id: Glyph) -> (glyph: Glyf_Entry, ok: bool) {
-	if glyf == nil || glyf.loca == nil {return {}, false}
+	if glyf == nil || glyf.loca == nil {return}
 
-	// Get the offsets for this glyph
-	offset, length, found := get_glyph_location(glyf.loca, glyph_id)
-	if !found {return {}, false}
+	offset, length := get_glyph_location(glyf.loca, glyph_id) or_return
 
-	// Create glyph representation
 	glyph = Glyf_Entry {
 		index    = glyph_id,
 		is_empty = length == 0,
@@ -118,9 +153,7 @@ get_glyf_entry :: proc(glyf: ^Glyf_Table, glyph_id: Glyph) -> (glyph: Glyf_Entry
 
 	// Only set the slice if this isn't an empty glyph
 	if !glyph.is_empty {
-		if bounds_check(offset + length > uint(len(glyf.data))) {
-			return {}, false
-		}
+		if bounds_check(offset + length > uint(len(glyf.data))) {return}
 		glyph.slice = glyf.data[offset:offset + length]
 		glyph.header = transmute(^OpenType_Glyf_Entry_Header)&glyph.slice[0]
 	}
@@ -148,15 +181,15 @@ get_bbox :: proc(glyph: Glyf_Entry) -> (bbox: Bounding_Box, ok: bool) {
 // Helper to get end points for simple glyphs
 get_end_points :: proc(glyph: Glyf_Entry) -> (end_points: []u16be, ok: bool) {
 	if glyph.is_empty || bounds_check(len(glyph.slice) < size_of(OpenType_Glyf_Entry_Header)) {
-		return nil, false
+		return
 	}
 	// Validate num_contours
-	if is_composite_glyph(glyph) {return nil, false}
+	if is_composite_glyph(glyph) {return}
 	// Calculate offset to end points array
 	end_points_offset := uint(size_of(OpenType_Glyf_Entry_Header))
-	// FIXME: QUESTION: can this be 2 OR 4 bytes???
-	if end_points_offset + uint(glyph.header.number_of_contours) * 2 > uint(len(glyph.slice)) {
-		return nil, false
+	if end_points_offset + uint(glyph.header.number_of_contours) * size_of(u16) >
+	   uint(len(glyph.slice)) {
+		return
 	}
 
 	// Create a slice over the existing data - no allocation
@@ -192,7 +225,7 @@ get_instructions :: proc(glyph: Glyf_Entry) -> (instructions: []byte, ok: bool) 
 	end_points_offset := uint(size_of(OpenType_Glyf_Entry_Header))
 	instruction_len_offset := end_points_offset + uint(glyph.header.number_of_contours) * 2
 
-	if instruction_len_offset + 2 > uint(len(glyph.slice)) {
+	if bounds_check(instruction_len_offset + 2 > uint(len(glyph.slice))) {
 		return nil, false
 	}
 
@@ -229,56 +262,6 @@ get_glyph_extents :: proc(
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
-// A parsing iterator for flags, x and y coordinates
-Simple_Glyph_Parser :: struct {
-	glyph:           Glyf_Entry,
-	flags_offset:    uint,
-	x_coords_offset: uint,
-	y_coords_offset: uint,
-	point_count:     uint,
-	// Internal state for parsing
-	current_point:   uint,
-	current_x:       i16,
-	current_y:       i16,
-}
-
-// Initialize a parser for simple glyph points
-init_simple_glyph_parser :: proc(glyph: Glyf_Entry) -> (parser: Simple_Glyph_Parser, ok: bool) {
-	if glyph.is_empty || is_composite_glyph(glyph) {
-		return {}, false
-	}
-
-	// Get end points to determine total points
-	point_count, got_point_count := get_point_count(glyph)
-	if !got_point_count {
-		return {}, false
-	}
-
-	// Get instruction length
-	instructions, got_instructions := get_instructions(glyph)
-	if !got_instructions {
-		return {}, false
-	}
-
-	// Calculate flags offset
-	end_points_offset := uint(size_of(OpenType_Glyf_Entry_Header))
-	instruction_len_offset := end_points_offset + uint(glyph.header.number_of_contours) * 2
-	instruction_length := uint(len(instructions))
-	flags_offset := instruction_len_offset + 2 + instruction_length
-
-	parser = Simple_Glyph_Parser {
-		glyph        = glyph,
-		flags_offset = flags_offset,
-		point_count  = uint(point_count),
-	}
-
-	// To find x_coords_offset and y_coords_offset, we need to pre-scan the flags
-	// This is a simplification - a real implementation would parse flags here
-	// TODO:
-
-	return parser, true
-}
-
 // Iterator for composite glyph components
 Component_Parser :: struct {
 	glyph:          Glyf_Entry,
@@ -299,7 +282,7 @@ Composite_Component :: struct {
 	scale_x:        f32, // X scaling factor (default 1.0)
 	scale_y:        f32, // Y scaling factor (default 1.0)
 	matrx:          [4]f32, // 2x2 transformation matrix (if applicable)
-	flags:          Composite_Glyph_Flag, // Flags
+	flags:          Composite_Glyph_Flags, // Flags
 	use_my_metrics: bool, // Whether to use the metrics from this component
 }
 
@@ -326,7 +309,7 @@ next_component :: proc(parser: ^Component_Parser) -> (component: Composite_Compo
 	}
 
 	// Read flags and glyph index
-	flags := transmute(Composite_Glyph_Flag)read_u16(parser.glyph.slice, parser.current_offset)
+	flags := read_composite_glyph_flags(read_u16(parser.glyph.slice, parser.current_offset))
 	component_glyph_id := Glyph(read_u16(parser.glyph.slice, parser.current_offset + 2))
 	current_offset := parser.current_offset + 4
 
@@ -335,18 +318,18 @@ next_component :: proc(parser: ^Component_Parser) -> (component: Composite_Compo
 		flags          = flags,
 		scale_x        = 1.0,
 		scale_y        = 1.0,
-		use_my_metrics = flags.USE_MY_METRICS,
+		use_my_metrics = .USE_MY_METRICS in flags,
 	}
 
 	// Read arguments based on flags
-	if flags.ARG_1_AND_2_ARE_WORDS {
+	if .ARG_1_AND_2_ARE_WORDS in flags {
 		// Arguments are 16-bit values
 		if current_offset + 4 > uint(len(parser.glyph.slice)) {
 			parser.has_more = false
 			return {}, false
 		}
 
-		if flags.ARGS_ARE_XY_VALUES {
+		if .ARGS_ARE_XY_VALUES in flags {
 			// Arguments are x,y offsets
 			component.x_offset = read_i16(parser.glyph.slice, current_offset)
 			component.y_offset = read_i16(parser.glyph.slice, current_offset + 2)
@@ -361,7 +344,7 @@ next_component :: proc(parser: ^Component_Parser) -> (component: Composite_Compo
 			return {}, false
 		}
 
-		if flags.ARGS_ARE_XY_VALUES {
+		if .ARGS_ARE_XY_VALUES in flags {
 			// Arguments are x,y offsets
 			component.x_offset = i16(cast(i8)parser.glyph.slice[current_offset])
 			component.y_offset = i16(cast(i8)parser.glyph.slice[current_offset + 1])
@@ -372,7 +355,7 @@ next_component :: proc(parser: ^Component_Parser) -> (component: Composite_Compo
 	}
 
 	// Read transformation based on flags
-	if flags.WE_HAVE_A_SCALE {
+	if .WE_HAVE_A_SCALE in flags {
 		// Single scale value for both x and y
 		if current_offset + 2 > uint(len(parser.glyph.slice)) {
 			parser.has_more = false
@@ -383,7 +366,7 @@ next_component :: proc(parser: ^Component_Parser) -> (component: Composite_Compo
 		component.scale_x = scale
 		component.scale_y = scale
 		current_offset += 2
-	} else if flags.WE_HAVE_AN_X_AND_Y_SCALE {
+	} else if .WE_HAVE_AN_X_AND_Y_SCALE in flags {
 		// Separate scale values for x and y
 		if current_offset + 4 > uint(len(parser.glyph.slice)) {
 			parser.has_more = false
@@ -393,7 +376,7 @@ next_component :: proc(parser: ^Component_Parser) -> (component: Composite_Compo
 		component.scale_x = F2DOT14_to_Float(read_i16be(parser.glyph.slice, current_offset))
 		component.scale_y = F2DOT14_to_Float(read_i16be(parser.glyph.slice, current_offset + 2))
 		current_offset += 4
-	} else if flags.WE_HAVE_A_TWO_BY_TWO {
+	} else if .WE_HAVE_A_TWO_BY_TWO in flags {
 		// 2x2 transformation mtrx
 		if current_offset + 8 > uint(len(parser.glyph.slice)) {
 			parser.has_more = false
@@ -417,7 +400,7 @@ next_component :: proc(parser: ^Component_Parser) -> (component: Composite_Compo
 
 	// Update offsets for next component
 	parser.current_offset = current_offset
-	parser.has_more = flags.MORE_COMPONENTS
+	parser.has_more = .MORE_COMPONENTS in flags
 
 	return component, true
 }

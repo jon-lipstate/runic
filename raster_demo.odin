@@ -36,39 +36,38 @@ spall_exit :: proc "contextless" (
 }
 
 // main :: proc() {
-// 	when ODIN_DEBUG {
-// 		track: mem.Tracking_Allocator
-// 		mem.tracking_allocator_init(&track, context.allocator)
-// 		context.allocator = mem.tracking_allocator(&track)
+// 	track: mem.Tracking_Allocator
+// 	mem.tracking_allocator_init(&track, context.allocator)
+// 	context.allocator = mem.tracking_allocator(&track)
 
-// 		defer {
-// 			if len(track.allocation_map) > 0 {
-// 				fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
-// 				for _, entry in track.allocation_map {
-// 					fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
-// 				}
+// 	defer {
+// 		if len(track.allocation_map) > 0 {
+// 			fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
+// 			for _, entry in track.allocation_map {
+// 				// fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
 // 			}
-// 			mem.tracking_allocator_destroy(&track)
 // 		}
+// 		mem.tracking_allocator_destroy(&track)
 // 	}
 
-// 	_main()
+// 	_main(&track)
 // }
-
+// track: ^mem.Tracking_Allocator
 main :: proc() {
 	spall_ctx = spall.context_create("rune.spall")
 	defer spall.context_destroy(&spall_ctx)
 
-	buffer_backing := make([]u8, spall.BUFFER_DEFAULT_SIZE * 1024)
+	buffer_backing := make([]u8, spall.BUFFER_DEFAULT_SIZE)
 	defer delete(buffer_backing)
 
 	spall_buffer = spall.buffer_create(buffer_backing, u32(sync.current_thread_id()))
 	defer spall.buffer_destroy(&spall_ctx, &spall_buffer)
 	/////////////////////////////////////////////////////////////////////
-	// defer fmt.println("Main Finished")
+	// fmt.printf("Memory After Spall %v KiB\n", track.total_memory_allocated / 1024)
 
 	engine := shaper.create_engine()
 	defer shaper.destroy_engine(engine)
+	// fmt.printf("Memory After create_engine %v KiB\n", track.total_memory_allocated / 1024)
 
 	// Load and register a font
 	font_path := "./segoeui.ttf"
@@ -77,13 +76,14 @@ main :: proc() {
 		fmt.eprintln("Error loading font:", err)
 		return
 	}
-	// defer ttf.destroy_font(&font) // <- the engine will delete them; maybe have that be an optional flag
+	// defer ttf.destroy_font(&font) // <- the engine will delete them; maybe dont do that...
 
 	font_id, ok := shaper.register_font(engine, &font)
 	if !ok {
 		fmt.eprintln("Error registering font")
 		return
 	}
+	// fmt.printf("Memory After register_font %v KiB\n", track.total_memory_allocated / 1024)
 
 	// fmt.println("Font loaded and registered successfully")
 	// fmt.println("Units per em:", font.units_per_em)
@@ -91,6 +91,8 @@ main :: proc() {
 	// test_specific_glyphs(&font)
 
 	test_text_rendering(engine, font_id, &font)
+	// fmt.printf("Memory After test_text_rendering %v KiB\n", track.total_memory_allocated / 1024)
+
 }
 
 test_specific_glyphs :: proc(font: ^ttf.Font) {
@@ -107,7 +109,7 @@ test_specific_glyphs :: proc(font: ^ttf.Font) {
 
 	if found_iacute {
 		// fmt.printf("Found iacute glyph (ID: %d)\n", iacute_glyph)
-		render_single_glyph(font, iacute_glyph, 72, "TEST_IMAGE.bmp")
+		// render_single_glyph(font, iacute_glyph, 72, "TEST_IMAGE.bmp")
 		// fmt.println("Done with render_single_glyph")
 	} else {
 		fmt.println("Could not find iacute glyph")
@@ -157,7 +159,7 @@ test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font:
 	// fmt.println("\nRendering text...")
 	// render_text(font, buffer, size_px, "text.bmp")
 }
-
+/*
 
 render_text :: proc(
 	font: ^ttf.Font,
@@ -422,3 +424,4 @@ render_single_glyph :: proc(
 
 	return true
 }
+*/

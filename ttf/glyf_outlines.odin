@@ -3,6 +3,33 @@ package ttf
 import "core:fmt"
 import "core:math"
 
+// Glyph_Outline_Cache :: struct {
+// 	font:             ^Font,
+// 	extracted_glyphs: map[u16]Extracted_Glyph,
+// 	// processed_curves: map[u16]Glyph_Curves
+// 	// hinted_glyphs:    map[Hinting_Key]Hinted_Glyph,
+// }
+// Hinting_Key :: struct {
+// 	glyph_id:     u16,
+// 	size_px:      u16,
+// 	dpi:          u16,
+// 	hinting_mode: u8,
+// }
+
+// Hinted_Glyph :: struct {
+// 	points:   [][2]f32, // Hinted points in pixel space
+// 	flags:    []u8, // Flags for these points
+// 	contours: []u16, // Contour endpoints
+// 	curves:   Glyph_Curves, // Processed curves for rendering
+// }
+
+// TrueType Point structure to represent parsed point data
+// TT_Point :: struct {
+// 	x, y:       f32, // Coordinates (transformed)
+// 	is_implied: bool, // True if this is an implied point (not in original data)
+// 	flags:      Simple_Glyph_Flags, // Original TrueType flags
+// }
+///////////////////////////////////////////////////////////////////////////////////////
 Glyph_Outline :: struct {
 	contours: [dynamic]Contour,
 	bounds:   Bounding_Box,
@@ -29,24 +56,6 @@ Quad_Bezier_Segment :: struct {
 	a, control, b: [2]f32,
 }
 
-ON_CURVE_POINT := Simple_Glyph_Flag {
-	ON_CURVE_POINT = true,
-}
-X_SHORT_VECTOR := Simple_Glyph_Flag {
-	X_SHORT_VECTOR = true,
-}
-X_IS_SAME := Simple_Glyph_Flag {
-	X_IS_SAME = true,
-}
-Y_SHORT_VECTOR := Simple_Glyph_Flag {
-	Y_SHORT_VECTOR = true,
-}
-Y_IS_SAME := Simple_Glyph_Flag {
-	Y_IS_SAME = true,
-}
-REPEAT_FLAG := Simple_Glyph_Flag {
-	REPEAT_FLAG = true,
-}
 
 // Determine if the contour is clockwise or counter-clockwise
 compute_contour_direction :: proc(contour: ^Contour) -> (clockwise: bool) {
@@ -69,6 +78,7 @@ compute_contour_direction :: proc(contour: ^Contour) -> (clockwise: bool) {
 
 	return area > 0
 }
+/*
 
 // Parse a glyph outline from the font, with optional transform
 parse_glyph_outline :: proc(
@@ -123,19 +133,19 @@ calculate_component_transform :: proc(component: Composite_Component) -> [6]f32 
 	transform := [6]f32{1.0, 0.0, 0.0, 1.0, 0.0, 0.0} // [xx, xy, yx, yy, dx, dy]
 
 	// Apply translation
-	if component.flags.ARGS_ARE_XY_VALUES {
+	if .ARGS_ARE_XY_VALUES in component.flags {
 		transform[4] = f32(component.x_offset) // dx
 		transform[5] = f32(component.y_offset) // dy
 	}
 
 	// Apply scaling/transformation based on flags
-	if component.flags.WE_HAVE_A_SCALE {
+	if .WE_HAVE_A_SCALE in component.flags {
 		transform[0] = component.scale_x // xx
 		transform[3] = component.scale_x // yy
-	} else if component.flags.WE_HAVE_AN_X_AND_Y_SCALE {
+	} else if .WE_HAVE_AN_X_AND_Y_SCALE in component.flags {
 		transform[0] = component.scale_x // xx
 		transform[3] = component.scale_y // yy
-	} else if component.flags.WE_HAVE_A_TWO_BY_TWO {
+	} else if .WE_HAVE_A_TWO_BY_TWO in component.flags {
 		transform[0] = component.matrx[0] // xx
 		transform[1] = component.matrx[1] // xy
 		transform[2] = component.matrx[2] // yx
@@ -189,7 +199,7 @@ parse_composite_glyph :: proc(
 		// For empty component glyphs, just update the bounds
 		if component_glyph.is_empty {
 			// For spaces and other empty glyphs, apply the offset only
-			if component.flags.ARGS_ARE_XY_VALUES {
+			if .ARGS_ARE_XY_VALUES in component.flags {
 				// Update bounds if needed based on component position
 				// This is important for proper positioning of composite glyphs
 				// TODO:
@@ -237,12 +247,7 @@ destroy_glyph_outline :: proc(outline: ^Glyph_Outline) {
 }
 
 
-// TrueType Point structure to represent parsed point data
-TT_Point :: struct {
-	x, y:       f32, // Coordinates (transformed)
-	is_implied: bool, // True if this is an implied point (not in original data)
-	flags:      Simple_Glyph_Flag, // Original TrueType flags
-}
+
 
 // Collect glyph points directly during parsing
 parse_raw_glyph_points :: proc(
@@ -285,7 +290,7 @@ parse_raw_glyph_points :: proc(
 		current_offset += 1
 
 		// Create a TT_Point with just the flag data
-		flag := transmute(Simple_Glyph_Flag)flag_byte
+		flag := read_simple_glyph_flags(flag_byte)
 		point := TT_Point {
 			flags = flag,
 		}
@@ -293,7 +298,7 @@ parse_raw_glyph_points :: proc(
 		append(&points, point)
 
 		// Handle repeat flag
-		if flag.REPEAT_FLAG {
+		if .REPEAT_FLAG in flag {
 			if bounds_check(current_offset >= uint(len(glyph.slice))) {
 				delete(points)
 				return {}, false
@@ -536,7 +541,7 @@ create_segments_from_points :: proc(
 	// Find first on-curve point
 	start_idx := 0
 	for i := 0; i < point_count; i += 1 {
-		if points[i].flags.ON_CURVE_POINT {
+		if .ON_CURVE_POINT in points[i].flags {
 			start_idx = i
 			break
 		}
@@ -558,7 +563,7 @@ create_segments_from_points :: proc(
 			break
 		}
 
-		if points[current].flags.ON_CURVE_POINT && points[next].flags.ON_CURVE_POINT {
+		if .ON_CURVE_POINT in points[current].flags && .ON_CURVE_POINT in points[next].flags {
 			// Line segment between two on-curve points
 			segment := Line_Segment {
 				a = [2]f32{points[current].x, points[current].y},
@@ -575,12 +580,13 @@ create_segments_from_points :: proc(
 			// )
 
 			current = next
-		} else if points[current].flags.ON_CURVE_POINT && !points[next].flags.ON_CURVE_POINT {
+		} else if .ON_CURVE_POINT in points[current].flags &&
+		   .ON_CURVE_POINT not_in points[next].flags {
 			// Find the next on-curve point after the off-curve point
 			after_next := (next + 1) % point_count
 
 			// With our preprocessing, this must be on-curve
-			if !points[after_next].flags.ON_CURVE_POINT {
+			if .ON_CURVE_POINT not_in points[after_next].flags {
 				fmt.println("ERROR: Expected on-curve point after off-curve point")
 				return false
 			}
@@ -707,3 +713,4 @@ insert_at :: proc(array: ^[dynamic]TT_Point, index: int, value: TT_Point) {
 	}
 	array[index] = value
 }
+*/
