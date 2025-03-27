@@ -1,5 +1,6 @@
 package ttf
 
+import "core:fmt"
 
 Script_Iterator :: struct {
 	gsub:          ^GSUB_Table,
@@ -364,7 +365,14 @@ into_coverage_iter :: proc(
 
 	// Read coverage format
 	format := read_u16(gsub.raw_data, abs_coverage_offset)
-	if bounds_check(format != 1 && format != 2) {
+	if format != 1 && format != 2 {
+		fmt.println("into_coverage_iter: Invalid Coverage Format:", format)
+		fmt.printf(
+			"subtable_offset: %v, coverage_offset %v, len(gsub.raw_data):%v\n",
+			subtable_offset,
+			coverage_offset,
+			len(gsub.raw_data),
+		)
 		return {}, false // Invalid coverage format
 	}
 

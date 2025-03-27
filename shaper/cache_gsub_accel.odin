@@ -1,20 +1,26 @@
 package shaper
 
 import "../ttf"
+import "core:fmt"
 import "core:slice"
 
 
 GSUB_Accelerator :: struct {
 	// Lookup type-specific accelerators
-	single_subst:    map[u16]Single_Subst_Accelerator, // For single substitutions
-	ligature_subst:  map[u16]Ligature_Subst_Accelerator, // For ligature substitutions
+	single_subst:          map[u16]Single_Subst_Accelerator, // For single substitutions
+	ligature_subst:        map[u16]Ligature_Subst_Accelerator, // For ligature substitutions
+	multiple_subst:        map[u16]Multiple_Subst_Accelerator, // For multiple substitutions
+	alternate_subst:       map[u16]Alternate_Subst_Accelerator, // For alternate substitutions
+	context_subst:         map[u16]Context_Accelerator, // For context substitutions
+	chained_context_subst: map[u16]Chained_Context_Accelerator, // For chained context substitutions
+	reverse_chained_subst: map[u16]Reverse_Chained_Accelerator, // For reverse chained substitutions
 
 	// Coverage acceleration - quick check if a glyph is in coverage
-	coverage_digest: map[uint]Coverage_Digest, // offset → digest
+	coverage_digest:       map[uint]Coverage_Digest, // offset → digest
 
 	// Feature flag acceleration
-	feature_lookups: map[Feature_Tag][]u16, // feature → lookup indices
-	extension_map:   map[u16]Extension_Info,
+	feature_lookups:       map[Feature_Tag][]u16, // feature → lookup indices
+	extension_map:         map[u16]Extension_Info,
 }
 
 // Fast coverage testing using a digest/bloom filter approach
@@ -62,8 +68,91 @@ Extension_Info :: struct {
 	is_processed:     bool, // Whether this extension has been processed
 }
 
+Chained_Context_Accelerator :: struct {
+	format:              u16,
+
+	// Format-specific data
+	// For Format 3:
+	backtrack_coverages: []Coverage_Digest,
+	input_coverages:     []Coverage_Digest,
+	lookahead_coverages: []Coverage_Digest,
+
+	// Substitution records
+	substitutions:       []Substitution_Record,
+}
+
+Substitution_Record :: struct {
+	sequence_index:    u16,
+	lookup_list_index: u16,
+}
+
+Context_Accelerator :: struct {
+	format:          u16,
+
+	// Format 1: Rule sets based on first glyph
+	rule_sets:       map[Glyph][]Context_Rule, // For Format 1
+
+	// Format 2: Class-based approach
+	class_def:       map[Glyph]u16, // Class definition table
+	class_sets:      map[u16][]Context_Rule, // Rules by class
+
+	// Format 3: Coverage-based approach
+	coverage_tables: []Coverage_Digest, // Array of coverage tables
+
+	// Shared data
+	substitutions:   []Substitution_Record,
+}
+
+Context_Rule :: struct {
+	// For Format 1
+	input_sequence:       []Glyph, // Input sequence (excluding first glyph)
+
+	// For Format 2
+	input_classes:        []u16, // Input classes (excluding first class)
+
+	// Shared
+	substitution_records: []Substitution_Record,
+}
+
+Reverse_Chained_Accelerator :: struct {
+	format:              u16, // Always 1 for Reverse Chained
+
+	// Coverage for the target glyphs
+	coverage:            Coverage_Digest,
+
+	// Backtrack and lookahead coverages
+	backtrack_coverages: []Coverage_Digest,
+	lookahead_coverages: []Coverage_Digest,
+
+	// Substitution mapping
+	substitution_map:    map[Glyph]Glyph, // Original → Substitute
+}
+
+Multiple_Subst_Accelerator :: struct {
+	format:       ttf.GSUB_Lookup_Type,
+	coverage:     Coverage_Digest,
+
+	// Map from input glyph to output sequence
+	sequence_map: map[Glyph][]Glyph,
+}
+
+Alternate_Subst_Accelerator :: struct {
+	format:        ttf.GSUB_Lookup_Type,
+	coverage:      Coverage_Digest,
+
+	// Map from input glyph to alternate options
+	alternate_map: map[Glyph][]Glyph,
+}
+
+// Helper to determine if cache has GSUB acceleration
+has_gsub_acceleration :: proc(cache: ^Shaping_Cache) -> bool {
+	// Check if any acceleration structures are populated
+	has_singles := len(cache.gsub_accel.single_subst) > 0
+	has_ligatures := len(cache.gsub_accel.ligature_subst) > 0
+	return has_singles || has_ligatures
+}
+
 // Build GSUB accelerator for a specific lookup
-// Modified build_gsub_accelerator to handle extension subtables
 build_gsub_accelerator :: proc(font: ^Font, cache: ^Shaping_Cache) -> bool {
 	gsub, has_gsub := ttf.get_table(font, "GSUB", ttf.load_gsub_table, ttf.GSUB_Table)
 	if !has_gsub || cache.gsub_lookups == nil {return false}
@@ -131,58 +220,25 @@ build_gsub_accelerator :: proc(font: ^Font, cache: ^Shaping_Cache) -> bool {
 	return true
 }
 
-// Helper function to process a lookup subtable based on its type
-process_lookup_subtable :: proc(
-	gsub: ^ttf.GSUB_Table,
-	accel: ^GSUB_Accelerator,
-	lookup_idx: u16,
-	lookup_type: ttf.GSUB_Lookup_Type,
-	subtable_offset: uint,
-) {
-	// Get coverage offset
-	if !bounds_check(subtable_offset + 2 <= uint(len(gsub.raw_data))) {
-		return
-	}
-
-	coverage_offset := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
-	abs_coverage_offset := subtable_offset + uint(coverage_offset)
-
-	// Create coverage digest if it doesn't exist yet
-	if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
-		digest := build_coverage_digest(gsub, abs_coverage_offset)
-		accel.coverage_digest[abs_coverage_offset] = digest
-	}
-
-	// Process based on actual lookup type
-	#partial switch lookup_type {
-	case .Single:
-		accelerate_single_substitution(
-			gsub,
-			accel,
-			lookup_idx,
-			subtable_offset,
-			abs_coverage_offset,
-		)
-
-	case .Ligature:
-		accelerate_ligature_substitution(
-			gsub,
-			accel,
-			lookup_idx,
-			subtable_offset,
-			abs_coverage_offset,
-		)
-
-	// Add other lookup types as needed
-	}
-}
-
 // Build coverage digest for quick testing
 build_coverage_digest :: proc(gsub: ^ttf.GSUB_Table, coverage_offset: uint) -> Coverage_Digest {
 	digest: Coverage_Digest
 
 	// Initialize 256-bit digest (8 u32s) to zeros
 	digest.direct_map = make(map[Glyph]bool)
+
+	// Read coverage format
+	if coverage_offset + 2 > uint(len(gsub.raw_data)) {
+		fmt.printf("Coverage digest: offset out of bounds %d\n", coverage_offset)
+		return digest
+	}
+
+	format := ttf.read_u16(gsub.raw_data, coverage_offset)
+
+	if format != 1 && format != 2 {
+		fmt.printf("Coverage digest: invalid format %d at offset %d\n", format, coverage_offset)
+		return digest
+	}
 
 	// Create a coverage iterator
 	coverage_iter, coverage_ok := ttf.into_coverage_iter(gsub, 0, u16(coverage_offset))
@@ -302,7 +358,7 @@ accelerate_ligature_substitution :: proc(
 	subtable_offset: uint,
 	coverage_offset: uint,
 ) {
-	if !bounds_check(subtable_offset + 6 <= uint(len(gsub.raw_data))) {
+	if bounds_check(subtable_offset + 6 >= uint(len(gsub.raw_data))) {
 		return
 	}
 
@@ -415,9 +471,7 @@ accelerate_extension_substitution :: proc(
 	}
 
 	format := ttf.read_u16(gsub.raw_data, subtable_offset)
-	if format != 1 {
-		return // Only format 1 is defined for extension substitution
-	}
+	if format != 1 {return} 	// Only format 1 is defined for extension substitution
 
 	// Read extension lookup type and offset
 	extension_lookup_type := ttf.GSUB_Lookup_Type(ttf.read_u16(gsub.raw_data, subtable_offset + 2))
@@ -432,6 +486,13 @@ accelerate_extension_substitution :: proc(
 		extension_offset = abs_extension_offset,
 		is_processed     = false, // Will be processed later
 	}
+	fmt.printf(
+		"Extension: lookup_idx=%d, type=%v, offset=%d, absolute=%d\n",
+		lookup_idx,
+		extension_lookup_type,
+		extension_offset,
+		abs_extension_offset,
+	)
 
 	accel.extension_map[lookup_idx] = ext_info
 }
@@ -445,22 +506,15 @@ build_feature_lookup_map :: proc(
 ) {
 	// Iterate through all features
 	feature_iter, iter_ok := ttf.into_feature_iter_gsub(gsub, cache.gsub_lang_sys_offset)
-	if !iter_ok {
-		return
-	}
+	if !iter_ok {return}
 
-	for feature_index, record, feature_offset, has_more := ttf.iter_feature_gsub(&feature_iter);
-	    has_more;
-	    feature_index, record, feature_offset, has_more = ttf.iter_feature_gsub(&feature_iter) {
-
+	for feature_index, record, feature_offset in ttf.iter_feature_gsub(&feature_iter) {
 		// Get feature tag
 		feature_tag := Feature_Tag(ttf.tag_to_u32(record.feature_tag))
 
 		// Get lookup indices for this feature
 		lookup_iter, lookup_ok := ttf.into_lookup_iter(gsub.raw_data, feature_offset)
-		if !lookup_ok {
-			continue
-		}
+		if !lookup_ok {continue}
 
 		// Collect all lookup indices for this feature
 		lookups := make([dynamic]u16)
@@ -468,22 +522,56 @@ build_feature_lookup_map :: proc(
 			append(&lookups, lookup_index)
 		}
 
-		// Store in map
 		accel.feature_lookups[feature_tag] = lookups[:]
 	}
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Apply GSUB using accelerator
+// Check if a glyph is in a coverage digest
+is_glyph_in_coverage :: proc(digest: Coverage_Digest, glyph: Glyph) -> bool {
+	// Quick rejection test using the bloom filter
+	glyph_id := uint(glyph)
+	digest_idx := glyph_id / 32
+	bit_pos := glyph_id % 32
+
+	// If the bit isn't set in the digest, the glyph is definitely not covered
+	if digest_idx >= 8 || (digest.digest[digest_idx] & (1 << bit_pos)) == 0 {
+		return false
+	}
+
+	// Potential match, check more precisely
+	if len(digest.direct_map) > 0 {
+		// For small coverage sets, check direct map
+		if _, in_coverage := digest.direct_map[glyph]; in_coverage {
+			return true
+		}
+	} else if len(digest.sorted_glyphs) > 0 {
+		// For larger sets, use binary search
+		low, high := 0, len(digest.sorted_glyphs) - 1
+		for low <= high {
+			mid := (low + high) / 2
+			if digest.sorted_glyphs[mid] < glyph {
+				low = mid + 1
+			} else if digest.sorted_glyphs[mid] > glyph {
+				high = mid - 1
+			} else {
+				return true
+			}
+		}
+	}
+
+	// Not found in the precise check
+	return false
+}
+
 // Modified apply_gsub_with_accelerator to handle extension lookups
 apply_gsub_with_accelerator :: proc(
 	font: ^Font,
 	buffer: ^Shaping_Buffer,
 	cache: ^Shaping_Cache,
 ) -> bool {
-	if cache == nil {
-		return apply_gsub_standard(font, buffer) // Fall back to standard GSUB application
-	}
+	assert(cache != nil)
 
 	gsub, has_gsub := ttf.get_table(font, "GSUB", ttf.load_gsub_table, ttf.GSUB_Table)
 	if !has_gsub {return false}
@@ -502,7 +590,7 @@ apply_gsub_with_accelerator :: proc(
 				actual_lookup_type = ext_info.lookup_type
 			} else {
 				// No extension info available, fall back to standard handling
-				apply_standard_lookup(gsub, buffer, lookup_idx, lookup_type, lookup_flags)
+				apply_lookup(gsub, lookup_idx, lookup_type, lookup_flags, buffer)
 				continue
 			}
 		}
@@ -533,7 +621,7 @@ apply_gsub_with_accelerator :: proc(
 					ext_info.extension_offset,
 				)
 			} else {
-				apply_standard_lookup(gsub, buffer, lookup_idx, lookup_type, lookup_flags)
+				apply_lookup(gsub, lookup_idx, lookup_type, lookup_flags, buffer)
 			}
 		}
 	}
@@ -547,12 +635,15 @@ apply_accelerated_single_subst :: proc(
 	accel: Single_Subst_Accelerator,
 	lookup_flags: ttf.Lookup_Flags,
 ) {
-	// Process buffer
 	for i := 0; i < len(buffer.glyphs); i += 1 {
 		glyph_info := &buffer.glyphs[i]
 
 		// Skip glyphs based on lookup flags
 		if should_skip_glyph(glyph_info.category, lookup_flags) {
+			continue
+		}
+
+		if !is_glyph_in_coverage(accel.coverage, glyph_info.glyph_id) {
 			continue
 		}
 

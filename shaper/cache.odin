@@ -187,6 +187,9 @@ get_or_create_shape_cache :: proc(
 		}
 	}
 
+	build_gsub_accelerator(font, &new_cache)
+
+
 	// --- Process GPOS lookups ---
 	gpos, has_gpos := ttf.get_table(font, "GPOS", ttf.load_gpos_table, ttf.GPOS_Table)
 	if has_gpos {

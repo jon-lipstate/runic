@@ -3,8 +3,53 @@ package shaper
 import ttf "../ttf"
 import "core:fmt"
 
+// Apply standard lookup at a specific offset (for extension lookups)
+apply_standard_lookup_at_offset :: proc(
+	gsub: ^ttf.GSUB_Table,
+	buffer: ^Shaping_Buffer,
+	lookup_idx: u16,
+	lookup_type: ttf.GSUB_Lookup_Type,
+	lookup_flags: ttf.Lookup_Flags,
+	subtable_offset: uint,
+) -> bool {
+	// Save original cursor and flags
+	saved_cursor := buffer.cursor
+	saved_flags := buffer.flags
+
+	buffer.flags = lookup_flags
+
+	applied := false
+
+	switch lookup_type {
+	case .Single:
+		applied = apply_single_substitution_subtable(gsub, subtable_offset, buffer)
+	case .Multiple:
+		applied = apply_multiple_substitution_subtable(gsub, subtable_offset, buffer)
+	case .Alternate:
+		applied = apply_alternate_substitution_subtable(gsub, subtable_offset, buffer)
+	case .Ligature:
+		applied = apply_ligature_substitution_subtable(gsub, subtable_offset, buffer)
+	case .Context:
+		applied = apply_context_substitution_subtable(gsub, subtable_offset, buffer)
+	case .ChainedContext:
+		applied = apply_chained_context_subtable(gsub, subtable_offset, buffer)
+	case .ReverseChained:
+		applied = apply_reverse_chained_subtable(gsub, subtable_offset, buffer)
+	case .Extension:
+		// (should not happen here)
+		applied = false
+	}
+
+	// Restore original settings
+	buffer.cursor = saved_cursor
+	buffer.flags = saved_flags
+
+	return applied
+}
+
+
 // Apply a sequence of lookups to shape text
-apply_lookups :: proc(gsub: ^ttf.GSUB_Table, lookup_indices: []u16, buffer: ^Shaping_Buffer) {
+apply_gsub_lookups :: proc(gsub: ^ttf.GSUB_Table, lookup_indices: []u16, buffer: ^Shaping_Buffer) {
 	if gsub == nil || len(lookup_indices) == 0 || buffer == nil || len(buffer.glyphs) == 0 {
 		return
 	}

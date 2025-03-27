@@ -61,6 +61,7 @@ shape_text_with_font :: proc(
 
 
 // Shape text using the cached data
+// Shape text using the cached data
 shape_with_cache :: proc(
 	engine: ^Rune,
 	font: ^Font,
@@ -74,18 +75,23 @@ shape_with_cache :: proc(
 	// Map runes to initial glyphs (1:1 mapping)
 	reserve(&buffer.glyphs, len(buffer.runes))
 	map_runes_to_glyphs(font, buffer, cache)
-	// fmt.println("Buffer Settings", buffer.script, buffer.language, buffer.direction)
+
 	// If cache couldn't be created, fall back to basic shaping
 	if cache == nil {
-		fmt.println("Cache was nil - returning with basic mappings")
 		return shape_text_basic_with_buffer(font, buffer)
 	}
 
 	// Apply substitutions (GSUB)
 	gsub, has_gsub := ttf.get_table(font, "GSUB", ttf.load_gsub_table, ttf.GSUB_Table)
 	if has_gsub && len(cache.gsub_lookups) > 0 {
-		// Apply lookups from the cache
-		apply_lookups(gsub, cache.gsub_lookups, buffer)
+		// Check if we have acceleration structures built
+		if len(cache.gsub_accel.single_subst) > 0 || len(cache.gsub_accel.ligature_subst) > 0 {
+			// Use accelerated GSUB processing
+			apply_gsub_with_accelerator(font, buffer, cache)
+		} else {
+			// Fall back to standard lookup application
+			apply_gsub_lookups(gsub, cache.gsub_lookups, buffer)
+		}
 	}
 
 	// Allocate and initialize glyph positions
@@ -113,7 +119,6 @@ shape_with_cache :: proc(
 
 	return true
 }
-
 
 shape_text_basic_with_buffer :: proc(font: ^Font, buffer: ^Shaping_Buffer) -> (ok: bool) {
 	if buffer == nil {return false}

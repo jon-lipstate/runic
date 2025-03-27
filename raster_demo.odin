@@ -35,25 +35,25 @@ spall_exit :: proc "contextless" (
 	spall._buffer_end(&spall_ctx, &spall_buffer)
 }
 
-tmain :: proc() {
-	when ODIN_DEBUG {
-		track: mem.Tracking_Allocator
-		mem.tracking_allocator_init(&track, context.allocator)
-		context.allocator = mem.tracking_allocator(&track)
+// main :: proc() {
+// 	when ODIN_DEBUG {
+// 		track: mem.Tracking_Allocator
+// 		mem.tracking_allocator_init(&track, context.allocator)
+// 		context.allocator = mem.tracking_allocator(&track)
 
-		defer {
-			if len(track.allocation_map) > 0 {
-				fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
-				for _, entry in track.allocation_map {
-					fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
-				}
-			}
-			mem.tracking_allocator_destroy(&track)
-		}
-	}
+// 		defer {
+// 			if len(track.allocation_map) > 0 {
+// 				fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
+// 				for _, entry in track.allocation_map {
+// 					fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
+// 				}
+// 			}
+// 			mem.tracking_allocator_destroy(&track)
+// 		}
+// 	}
 
-	main()
-}
+// 	_main()
+// }
 
 main :: proc() {
 	spall_ctx = spall.context_create("rune.spall")
@@ -192,6 +192,9 @@ func GenerateAnimalURL(ctx context.Context, societyID int, animalID int, registr
 		.dlig, // discretionary ligatures
 		.kern, // Kerning
 		.mark, // Mark positioning
+		.hlig,
+		.rlig,
+		.ccmp,
 	)
 
 	size_px := f32(72)
