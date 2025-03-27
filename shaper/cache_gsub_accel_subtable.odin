@@ -11,9 +11,7 @@ process_lookup_subtable :: proc(
 	subtable_offset: uint,
 ) {
 	// Skip if we can't access the subtable
-	if bounds_check(subtable_offset + 2 >= uint(len(gsub.raw_data))) {
-		return
-	}
+	if bounds_check(subtable_offset + 2 >= uint(len(gsub.raw_data))) {return}
 
 	format := ttf.read_u16(gsub.raw_data, subtable_offset)
 
@@ -52,22 +50,16 @@ accelerate_single_subtable :: proc(
 	subtable_offset: uint,
 	format: u16,
 ) {
-	if format != 1 && format != 2 {
-		fmt.printf("Unsupported Single subtable format: %d\n", format)
-		return
-	}
+	if format != 1 && format != 2 {return}
 
-	// Process coverage
 	coverage_offset := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
 	abs_coverage_offset := subtable_offset + uint(coverage_offset)
 
-	// Create coverage digest if needed
 	if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
 		digest := build_coverage_digest(gsub, abs_coverage_offset)
 		accel.coverage_digest[abs_coverage_offset] = digest
 	}
 
-	// Continue with your existing accelerate_single_substitution logic
 	accelerate_single_substitution(gsub, accel, lookup_idx, subtable_offset, abs_coverage_offset)
 }
 
@@ -79,24 +71,18 @@ accelerate_multiple_subtable :: proc(
 	subtable_offset: uint,
 	format: u16,
 ) {
-	// Multiple substitution only has format 1
-	if format != 1 {
-		fmt.printf("Unsupported Multiple subtable format: %d\n", format)
-		return
-	}
+	if format != 1 {return} 	// Multiple substitution only has format 1
 
-	// Get coverage
 	coverage_offset := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
 	abs_coverage_offset := subtable_offset + uint(coverage_offset)
 
-	// Create coverage digest if needed
 	if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
 		digest := build_coverage_digest(gsub, abs_coverage_offset)
 		accel.coverage_digest[abs_coverage_offset] = digest
 	}
 
 	// TODO: Implement multiple substitution acceleration
-	// This would involve creating a map of input glyphs to output sequence
+	// Create a map of input glyphs to output sequence
 }
 
 // Process alternate substitution subtable
@@ -107,24 +93,18 @@ accelerate_alternate_subtable :: proc(
 	subtable_offset: uint,
 	format: u16,
 ) {
-	// Alternate substitution only has format 1
-	if format != 1 {
-		fmt.printf("Unsupported Alternate subtable format: %d\n", format)
-		return
-	}
+	if format != 1 {return} 	// Alternate substitution only has format 1
 
-	// Get coverage
 	coverage_offset := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
 	abs_coverage_offset := subtable_offset + uint(coverage_offset)
 
-	// Create coverage digest if needed
 	if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
 		digest := build_coverage_digest(gsub, abs_coverage_offset)
 		accel.coverage_digest[abs_coverage_offset] = digest
 	}
 
 	// TODO: Implement alternate substitution acceleration
-	// This would involve mapping glyphs to arrays of alternates
+	// Map glyphs to arrays of alternates
 }
 
 // Process ligature substitution subtable
@@ -230,54 +210,19 @@ accelerate_chained_context_subtable :: proc(
 		return
 	}
 
-	// Initialize Chained Context Accelerator if not exists
-	if _, has_accel := accel.chained_context_subst[lookup_idx]; !has_accel {
-		chained_accel := Chained_Context_Accelerator {
-			format = format,
-		}
-
-		accel.chained_context_subst[lookup_idx] = chained_accel
-	}
-
 	// Handle format-specific processing
-	if format == 1 {
-		// Format 1: Rule sets based on first glyph
-		coverage_offset := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
-		abs_coverage_offset := subtable_offset + uint(coverage_offset)
+	switch format {
+	case 1:
+		// Chain rule sets based on first glyph
+		accelerate_chained_context_format1(gsub, accel, lookup_idx, subtable_offset)
 
-		// Create coverage digest
-		if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
-			digest := build_coverage_digest(gsub, abs_coverage_offset)
-			accel.coverage_digest[abs_coverage_offset] = digest
-		}
+	case 2:
+		// Class-based chain rules
+		accelerate_chained_context_format2(gsub, accel, lookup_idx, subtable_offset)
 
-		// TODO: Process format 1 chain rules
-
-	} else if format == 2 {
-		// Format 2: Class-based chain rules
-		coverage_offset := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
-		abs_coverage_offset := subtable_offset + uint(coverage_offset)
-
-		// Create coverage digest
-		if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
-			digest := build_coverage_digest(gsub, abs_coverage_offset)
-			accel.coverage_digest[abs_coverage_offset] = digest
-		}
-
-		// TODO: Process class definitions and chain rules
-
-	} else if format == 3 {
-		// Format 3: Coverage-based chain rules
-		// TODO: Process format 3 with multiple coverage tables
-
-		// Read counts
-		backtrack_count := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
-
-		// Skip format 3 for now as it requires more complex handling
-		fmt.printf(
-			"ChainedContext Format 3 acceleration not yet implemented (lookup %d)\n",
-			lookup_idx,
-		)
+	case 3:
+		// Coverage-based chain rules
+		accelerate_chained_context_format3(gsub, accel, lookup_idx, subtable_offset)
 	}
 }
 
