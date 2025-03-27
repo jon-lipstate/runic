@@ -284,9 +284,7 @@ apply_ligature_substitution_subtable :: proc(
 	if buffer == nil || len(buffer.glyphs) == 0 {return false}
 
 	// Validate format
-	if bounds_check(subtable_offset + 6 > uint(len(gsub.raw_data))) {
-		return false
-	}
+	if bounds_check(subtable_offset + 6 > uint(len(gsub.raw_data))) {return false}
 
 	format := read_u16(gsub.raw_data, subtable_offset)
 	if format != 1 {return false} 	// Only Format 1 is defined for Ligature Substitution
@@ -298,9 +296,7 @@ apply_ligature_substitution_subtable :: proc(
 	ligature_set_count := read_u16(gsub.raw_data, subtable_offset + 4)
 	if bounds_check(
 		subtable_offset + 6 + uint(ligature_set_count) * 2 > uint(len(gsub.raw_data)),
-	) {
-		return false
-	}
+	) {return false}
 
 	changed := false
 
@@ -367,59 +363,18 @@ apply_ligature_substitution_subtable :: proc(
 			abs_lig_offset := abs_ligature_set_offset + uint(lig_offset)
 
 			// Try to match this ligature
-			ligature_glyph, component_count, matched := try_match_ligature(
-				gsub,
-				buffer,
-				abs_lig_offset,
-				pos,
-			)
+			ligature_glyph, matched := try_match_ligature(gsub, buffer, abs_lig_offset, pos)
 
 			if matched {
-				// We found a ligature match - apply it
-
-				// Get earliest cluster value among the components (for cluster mapping)
-				min_cluster := first_glyph.cluster
-				for i := pos + 1; i < pos + component_count; i += 1 {
-					if i >= len(buffer.glyphs) {
-						break
-					}
-					if buffer.glyphs[i].cluster < min_cluster {
-						min_cluster = buffer.glyphs[i].cluster
-					}
-				}
-
-				// Create component info for the ligature
-				ligature_info := Ligature_Info {
-					component_index  = 0,
-					total_components = u8(component_count),
-					original_glyph   = first_glyph.glyph_id,
-				}
-
-				// Replace the first glyph with the ligature
-				first_glyph.glyph_id = ligature_glyph
-				first_glyph.cluster = min_cluster
-				first_glyph.category = .Ligature
-				first_glyph.flags += {.Substituted, .Ligated}
-				first_glyph.ligature_components = ligature_info
-
-				if component_count > 1 {
-					// Safety check
-					if pos + component_count > len(buffer.glyphs) {
-						component_count = len(buffer.glyphs) - pos
-					}
-
-					// Remove components in reverse order to avoid index shifting issues
-					for i := component_count - 1; i > 0; i -= 1 {
-						component_pos := pos + i
-						if component_pos < len(buffer.glyphs) {
-							ordered_remove(&buffer.glyphs, component_pos)
-						}
-					}
-				}
-
+				apply_ligature_substitution(
+					buffer,
+					pos,
+					ligature_glyph,
+					buffer.scratch.component_glyphs[:],
+				)
 				ligature_found = true
 				changed = true
-				break // Found a ligature, move to the next potential start
+				break // Found a ligature, stop checking more
 			}
 		}
 
@@ -441,82 +396,83 @@ try_match_ligature :: proc(
 	start_pos: int,
 ) -> (
 	ligature_glyph: Glyph,
-	component_count: int,
 	matched: bool,
 ) {
 	// Check if we can read the ligature data
 	if bounds_check(abs_lig_offset + 4 > uint(len(gsub.raw_data))) {
-		return 0, 0, false
+		return 0, false
 	}
 
 	// Read ligature glyph ID and component count
 	ligature_glyph = Glyph(read_u16(gsub.raw_data, abs_lig_offset))
-	component_count = int(read_u16(gsub.raw_data, abs_lig_offset + 2))
+	component_count := int(read_u16(gsub.raw_data, abs_lig_offset + 2))
 
 	// A ligature must have at least 2 components
-	if component_count < 2 {
-		return 0, 0, false
-	}
+	if component_count < 2 {return 0, false}
 
 	// Check if we can read all component glyph IDs
 	if bounds_check(
 		abs_lig_offset + 4 + (uint(component_count) - 1) * 2 > uint(len(gsub.raw_data)),
-	) {
-		return 0, 0, false
+	) {return 0, false}
+
+	clear(&buffer.scratch.component_glyphs)
+
+	// First component is the glyph at start_pos
+	append(&buffer.scratch.component_glyphs, buffer.glyphs[start_pos].glyph_id)
+
+	// Read remaining components
+	for i := 1; i < component_count; i += 1 {
+		component_pos := abs_lig_offset + 4 + uint(i - 1) * 2
+		component_glyph := Glyph(read_u16(gsub.raw_data, component_pos))
+		append(&buffer.scratch.component_glyphs, component_glyph)
 	}
 
-	// fmt.printf(
-	// 	"Trying to match ligature with %d components at pos %d\n",
-	// 	component_count,
-	// 	start_pos,
-	// )
+	// Use the shared helper to match the sequence
+	if match_ligature_sequence(
+		buffer,
+		start_pos,
+		buffer.scratch.component_glyphs[:],
+		buffer.flags,
+	) {
+		return ligature_glyph, true
+	}
 
-	// First component is already matched (it's in the coverage table)
-	// Try to match remaining components
+	return 0, false
+}
+
+// Match a sequence of glyphs against a pattern
+match_ligature_sequence :: proc(
+	buffer: ^Shaping_Buffer,
+	start_pos: int,
+	components: []Glyph,
+	lookup_flags: ttf.Lookup_Flags,
+) -> bool {
+	if len(components) < 2 {return false}
+
+	// First component is already matched (it's the glyph at start_pos)
 	curr_pos := start_pos + 1
 	next_comp := 1 // Start matching from second component
 
 	// Try to match remaining components
-	for next_comp < component_count {
+	for next_comp < len(components) {
 		// Skip glyphs that should be ignored based on lookup flags
 		for curr_pos < len(buffer.glyphs) {
-			if curr_pos >= len(buffer.glyphs) {
-				// fmt.println("Ran out of glyphs to match")
-				return 0, 0, false
-			}
+			if curr_pos >= len(buffer.glyphs) {return false}
 
 			if !should_skip_glyph(
 				buffer.glyphs[curr_pos].category,
-				buffer.flags,
+				lookup_flags,
 				buffer.skip_mask,
-			) {
-				break
-			}
+			) {break}
 			curr_pos += 1
 		}
 
 		// Check if we've gone beyond the end of the buffer
-		if curr_pos >= len(buffer.glyphs) {
-			// fmt.println("Ran out of glyphs to match")
-			return 0, 0, false
-		}
-
-		// Read component glyph ID from the ligature table
-		component_pos := abs_lig_offset + 4 + uint(next_comp - 1) * 2
-		component_glyph := Glyph(read_u16(gsub.raw_data, component_pos))
+		if curr_pos >= len(buffer.glyphs) {return false}
 
 		// Check if the current glyph matches this component
-		current_glyph := buffer.glyphs[curr_pos].glyph_id
-		// fmt.printf(
-		// 	"Matching component %d: expected %d, found %d\n",
-		// 	next_comp,
-		// 	component_glyph,
-		// 	current_glyph,
-		// )
-
-		if current_glyph != component_glyph {
-			// fmt.println("Component mismatch")
-			return 0, 0, false
+		if buffer.glyphs[curr_pos].glyph_id != components[next_comp] {
+			return false
 		}
 
 		// Move to next component
@@ -524,9 +480,61 @@ try_match_ligature :: proc(
 		curr_pos += 1
 	}
 
-	// If we get here, all components were matched successfully
-	// fmt.println("All components matched successfully!")
-	return ligature_glyph, component_count, true
+	return true
+}
+
+// Apply a found ligature substitution to the buffer
+apply_ligature_substitution :: proc(
+	buffer: ^Shaping_Buffer,
+	start_pos: int,
+	ligature_glyph: Glyph,
+	components: []Glyph,
+) -> bool {
+	if start_pos >= len(buffer.glyphs) || len(components) < 2 {return false}
+
+	component_count := len(components)
+	first_glyph := &buffer.glyphs[start_pos]
+
+	// Get earliest cluster value among the components
+	min_cluster := first_glyph.cluster
+	for i := start_pos + 1; i < start_pos + component_count; i += 1 {
+		if i >= len(buffer.glyphs) {break}
+		if buffer.glyphs[i].cluster < min_cluster {
+			min_cluster = buffer.glyphs[i].cluster
+		}
+	}
+
+	// Create component info for the ligature
+	ligature_info := Ligature_Info {
+		component_index  = 0,
+		total_components = u8(component_count),
+		original_glyph   = first_glyph.glyph_id,
+	}
+
+	// Replace the first glyph with the ligature
+	first_glyph.glyph_id = ligature_glyph
+	first_glyph.cluster = min_cluster
+	first_glyph.category = .Ligature
+	first_glyph.flags += {.Substituted, .Ligated}
+	first_glyph.ligature_components = ligature_info
+
+	if component_count > 1 {
+		// Safety check
+		effective_component_count := component_count
+		if start_pos + effective_component_count > len(buffer.glyphs) {
+			effective_component_count = len(buffer.glyphs) - start_pos
+		}
+
+		// Remove components in reverse order to avoid index shifting issues
+		for i := effective_component_count - 1; i > 0; i -= 1 {
+			component_pos := start_pos + i
+			if component_pos < len(buffer.glyphs) {
+				ordered_remove(&buffer.glyphs, component_pos)
+			}
+		}
+	}
+
+	return true
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 apply_context_substitution_subtable :: proc(

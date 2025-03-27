@@ -31,13 +31,13 @@ Shaping_Buffer :: struct {
 
 	// Scratch space for temporary operations
 	scratch:           struct {
-		glyphs:        [dynamic]Glyph_Info, // decomp "ä" into "a" + "¨"
-		// glyphs:        [dynamic]Glyph, // multi-sub; ligatures etc
-		positions:     [dynamic]Glyph_Position,
-		decomposition: [dynamic]rune, // For temporary storage of decomposed characters
-		clusters:      [dynamic]uint, // For cluster analysis
+		glyphs:           [dynamic]Glyph_Info, // decomp "ä" into "a" + "¨"
+		component_glyphs: [dynamic]Glyph, // multi-sub; ligatures etc
+		positions:        [dynamic]Glyph_Position,
+		decomposition:    [dynamic]rune, // For temporary storage of decomposed characters
+		clusters:         [dynamic]uint, // For cluster analysis
 		// states:        [dynamic]u16, // For state machines
-		components:    [dynamic]Ligature_Info, // For tracking ligature components
+		components:       [dynamic]Ligature_Info, // For tracking ligature components
 	},
 }
 
@@ -121,7 +121,7 @@ create_shaping_buffer :: proc() -> ^Shaping_Buffer {
 
 	// Initialize scratch arrays
 	buffer.scratch.glyphs = make([dynamic]Glyph_Info)
-	// buffer.scratch.glyphs = make([dynamic]Glyph)
+	buffer.scratch.component_glyphs = make([dynamic]Glyph)
 	buffer.scratch.positions = make([dynamic]Glyph_Position)
 	buffer.scratch.clusters = make([dynamic]uint)
 	// buffer.scratch.states = make([dynamic]u16)
@@ -150,7 +150,7 @@ destroy_shaping_buffer :: proc(buffer: ^Shaping_Buffer) {
 
 	// Free the scratch arrays
 	delete(buffer.scratch.glyphs)
-	// delete(buffer.scratch.glyph_infos)
+	delete(buffer.scratch.component_glyphs)
 	delete(buffer.scratch.positions)
 	delete(buffer.scratch.clusters)
 	// delete(buffer.scratch.states)

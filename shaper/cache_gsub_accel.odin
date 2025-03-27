@@ -706,7 +706,7 @@ apply_accelerated_ligature_subst :: proc(
 		first_glyph := &buffer.glyphs[pos]
 
 		// Skip if this glyph should be ignored based on lookup flags
-		if should_skip_glyph(first_glyph.category, lookup_flags) {
+		if should_skip_glyph(first_glyph.category, lookup_flags, buffer.skip_mask) {
 			pos += 1
 			continue
 		}
@@ -722,89 +722,15 @@ apply_accelerated_ligature_subst :: proc(
 
 		if sequences, has_sequences := accel.ligature_map[first_glyph.glyph_id]; has_sequences {
 			for sequence in sequences {
-				// Try to match this ligature sequence
-				matched := true
-				curr_pos := pos + 1
-				next_comp := 1 // Start matching from second component
-
-				// Try to match remaining components
-				for next_comp < len(sequence.components) {
-					// Skip glyphs that should be ignored based on lookup flags
-					for curr_pos < len(buffer.glyphs) {
-						if curr_pos >= len(buffer.glyphs) {
-							matched = false
-							break
-						}
-
-						if !should_skip_glyph(buffer.glyphs[curr_pos].category, lookup_flags) {
-							break
-						}
-						curr_pos += 1
-					}
-
-					// Check if we've gone beyond the end of the buffer
-					if curr_pos >= len(buffer.glyphs) {
-						matched = false
-						break
-					}
-
-					// Check if the current glyph matches this component
-					if buffer.glyphs[curr_pos].glyph_id != sequence.components[next_comp] {
-						matched = false
-						break
-					}
-
-					// Move to next component
-					next_comp += 1
-					curr_pos += 1
-				}
-
-				if matched {
-					// We found a ligature match - apply it
-					component_count := len(sequence.components)
-
-					// Get earliest cluster value among the components
-					min_cluster := first_glyph.cluster
-					for i := pos + 1; i < pos + component_count; i += 1 {
-						if i >= len(buffer.glyphs) {
-							break
-						}
-						if buffer.glyphs[i].cluster < min_cluster {
-							min_cluster = buffer.glyphs[i].cluster
-						}
-					}
-
-					// Create component info for the ligature
-					ligature_info := Ligature_Info {
-						component_index  = 0,
-						total_components = u8(component_count),
-						original_glyph   = first_glyph.glyph_id,
-					}
-
-					// Replace the first glyph with the ligature
-					first_glyph.glyph_id = sequence.ligature
-					first_glyph.cluster = min_cluster
-					first_glyph.category = .Ligature
-					first_glyph.flags += {.Substituted, .Ligated}
-					first_glyph.ligature_components = ligature_info
-
-					if component_count > 1 {
-						// Safety check
-						if pos + component_count > len(buffer.glyphs) {
-							component_count = len(buffer.glyphs) - pos
-						}
-
-						// Remove components in reverse order to avoid index shifting issues
-						for i := component_count - 1; i > 0; i -= 1 {
-							component_pos := pos + i
-							if component_pos < len(buffer.glyphs) {
-								ordered_remove(&buffer.glyphs, component_pos)
-							}
-						}
-					}
-
+				if match_ligature_sequence(buffer, pos, sequence.components, lookup_flags) {
+					apply_ligature_substitution(
+						buffer,
+						pos,
+						sequence.ligature,
+						sequence.components,
+					)
 					ligature_found = true
-					break // Stop after first match
+					break
 				}
 			}
 		}
