@@ -47,6 +47,18 @@ Simple_Glyph_Flag :: bit_field u8 {
 	OVERLAP_SIMPLE: bool | 1, // 1 = contour overlaps other contours
 	RESERVED:       bool | 1, // Reserved, set to 0
 }
+// Simple_Glyph_Flag :: enum u8 {
+// 	ON_CURVE_POINT,
+// 	X_SHORT_VECTOR,
+// 	Y_SHORT_VECTOR,
+// 	REPEAT_FLAG,
+// 	X_IS_SAME,
+// 	Y_IS_SAME,
+// 	OVERLAP_SIMPLE,
+// 	RESERVED,
+// }
+
+// Simple_Glyph_Flags :: bit_set[Simple_Glyph_Flag;u8]
 
 // Composite glyph flags
 Composite_Glyph_Flag :: bit_field u16be {

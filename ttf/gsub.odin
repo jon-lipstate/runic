@@ -126,14 +126,26 @@ GSUB_Lookup_Type :: enum u16be {
 	ReverseChained = 8, // Reverse chained contextual single substitution
 }
 
-Lookup_Flags :: bit_field u16be {
-	RIGHT_TO_LEFT:                bool | 1, // bit 0
-	IGNORE_BASE_GLYPHS:           bool | 1, // bit 1
-	IGNORE_LIGATURES:             bool | 1, // bit 2
-	IGNORE_MARKS:                 bool | 1, // bit 3
-	USE_MARK_FILTERING_SET:       bool | 1, // bit 4
-	reserved:                     u8   | 3, // bits 5-7
-	MARK_ATTACHMENT_CLASS_FILTER: u8   | 8, // bits 8-15
+
+Lookup_Flag :: enum u8 {
+	RIGHT_TO_LEFT,
+	IGNORE_BASE_GLYPHS,
+	IGNORE_LIGATURES,
+	IGNORE_MARKS,
+	USE_MARK_FILTERING_SET,
+}
+Lookup_Flag_Set :: bit_set[Lookup_Flag;u8]
+
+Lookup_Flags :: struct {
+	flags:                  Lookup_Flag_Set,
+	mark_attachment_filter: u8,
+	// RIGHT_TO_LEFT,                bool | 1, // bit 0
+	// IGNORE_BASE_GLYPHS:           bool | 1, // bit 1
+	// IGNORE_LIGATURES:             bool | 1, // bit 2
+	// IGNORE_MARKS:                 bool | 1, // bit 3
+	// USE_MARK_FILTERING_SET:       bool | 1, // bit 4
+	// reserved:                     u8   | 3, // bits 5-7
+	// MARK_ATTACHMENT_CLASS_FILTER: u8   | 8, // bits 8-15
 }
 
 OpenType_Coverage :: struct #packed {

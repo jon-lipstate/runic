@@ -177,7 +177,7 @@ get_mark_filtering_set_gpos :: proc(
 	filter_set: u16be,
 	has_filter: bool,
 ) {
-	if !it.lookup_flags.USE_MARK_FILTERING_SET {return 0, false} 	// No filter set used
+	if .USE_MARK_FILTERING_SET not_in it.lookup_flags.flags {return 0, false} 	// No filter set used
 
 	// Mark filtering set is stored after the subtable offsets
 	filter_offset := it.lookup_offset + 6 + it.count * 2

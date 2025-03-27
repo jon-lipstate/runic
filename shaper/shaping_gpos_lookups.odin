@@ -27,7 +27,7 @@ apply_positioning_lookups :: proc(
 			// Get the mark filtering set if applicable
 			filter_set := u16be(0)
 			has_filter := false
-			if lookup_flags.USE_MARK_FILTERING_SET {
+			if .USE_MARK_FILTERING_SET in lookup_flags.flags {
 				filter_set, has_filter = ttf.get_mark_filtering_set_gpos(&subtable_iter)
 			}
 

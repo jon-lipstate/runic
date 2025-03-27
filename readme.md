@@ -1,6 +1,6 @@
 # Rune
 
-A high-performance OpenType font engine written in the Odin programming language.
+A high-performance OpenType font engine written in the Odin programming language. Focused on primarily on Latin scripts (I don't have the time to devote to other scripts at present).
 
 ## Overview
 

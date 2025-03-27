@@ -41,7 +41,19 @@ get_lookup_info :: proc(
 
 	// Read lookup type and flags
 	lookup_type = cast(GSUB_Lookup_Type)read_u16(gsub.raw_data, abs_lookup_offset)
-	lookup_flags = transmute(Lookup_Flags)read_u16(gsub.raw_data, abs_lookup_offset + 2)
+	raw_lookup_flags := read_u16(gsub.raw_data, abs_lookup_offset + 2)
+
+	// Extract the lower 5 bits for the flags
+	flags_bits := raw_lookup_flags & 0x001F // Bits 0-4
+	flags_set := transmute(Lookup_Flag_Set)(u8(flags_bits))
+
+	// Extract the upper 8 bits for the mark attachment filter
+	mark_attachment_filter := u8((raw_lookup_flags >> 8) & 0xFF) // Bits 8-15
+
+	lookup_flags = Lookup_Flags {
+		flags                  = flags_set,
+		mark_attachment_filter = mark_attachment_filter,
+	}
 
 	return lookup_type, lookup_flags, abs_lookup_offset, true
 }

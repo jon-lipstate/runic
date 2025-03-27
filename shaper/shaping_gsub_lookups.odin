@@ -88,7 +88,7 @@ apply_lookup :: proc(
 	// )
 
 	// Check if mark filtering is being used
-	if lookup_flags.USE_MARK_FILTERING_SET {
+	if .USE_MARK_FILTERING_SET in lookup_flags.flags {
 		mark_set, has_filter := ttf.get_mark_filtering_set(&subtable_iter)
 		if has_filter {
 			// Store the mark filtering set in buffer for use during processing
@@ -140,20 +140,20 @@ should_skip_glyph :: proc(
 	flags: ttf.Lookup_Flags,
 	skip_mask: u16be = 0,
 ) -> bool {
-	if flags.IGNORE_BASE_GLYPHS && gc == .Base {
+	if .IGNORE_BASE_GLYPHS in flags.flags && gc == .Base {
 		return true
 	}
 
-	if flags.IGNORE_LIGATURES && gc == .Ligature {
+	if .IGNORE_LIGATURES in flags.flags && gc == .Ligature {
 		return true
 	}
 
-	if flags.IGNORE_MARKS && gc == .Mark {
+	if .IGNORE_MARKS in flags.flags && gc == .Mark {
 		return true
 	}
 
 	// Handle mark filtering set if specified
-	if flags.USE_MARK_FILTERING_SET && gc == .Mark {
+	if .USE_MARK_FILTERING_SET in flags.flags && gc == .Mark {
 		// FIXME: Implement mark filtering set logic
 		// Currently just returning false to not skip
 	}
