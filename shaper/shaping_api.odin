@@ -112,7 +112,7 @@ shape_with_cache :: proc(
 	}
 
 	// Apply basic positioning first
-	apply_basic_positioning(font, buffer)
+	apply_basic_positioning(font, buffer, cache)
 
 	// Apply positioning (GPOS)
 	gpos, has_gpos := ttf.get_table(font, "GPOS", ttf.load_gpos_table, ttf.GPOS_Table)
@@ -128,7 +128,7 @@ shape_text_basic_with_buffer :: proc(font: ^Font, buffer: ^Shaping_Buffer) -> (o
 	if buffer == nil {return false}
 
 	// Apply basic positioning
-	apply_basic_positioning(font, buffer)
+	apply_basic_positioning(font, buffer, nil)
 
 	return true
 }

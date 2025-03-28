@@ -36,6 +36,7 @@ Shaping_Cache :: struct {
 	// coverage_accelerators: map[uint]Coverage_Accelerator, // index is abs offset of entire file
 	cmap_accel:           CMAP_Accelerator,
 	gsub_accel:           GSUB_Accelerator,
+	metrics:              map[Glyph]ttf.Glyph_Metrics,
 }
 
 // Coverage_Accelerator :: struct {
@@ -105,7 +106,8 @@ get_or_create_shape_cache :: proc(
 
 	// Initialize cache structure
 	new_cache := Shaping_Cache {
-		key = cache_key,
+		key     = cache_key,
+		metrics = make(map[Glyph]ttf.Glyph_Metrics),
 	}
 	has_shaping_data := false
 

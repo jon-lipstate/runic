@@ -70,17 +70,18 @@ load_loca_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	}
 
 	// Verify that offsets are in ascending order
-	prev_offset := uint(0)
+	when ODIN_DEBUG {
+		prev_offset := uint(0)
+		for i := uint(0); i < expected_entries; i += 1 {
+			current_offset := get_offset_at(loca, Glyph(i))
 
-	for i := uint(0); i < expected_entries; i += 1 {
-		current_offset := get_offset_at(loca, Glyph(i))
+			if current_offset < prev_offset {
+				free(loca)
+				return {}, .Invalid_Table_Format
+			}
 
-		if current_offset < prev_offset {
-			free(loca)
-			return {}, .Invalid_Table_Format
+			prev_offset = current_offset
 		}
-
-		prev_offset = current_offset
 	}
 
 	return Table_Entry{data = loca, destroy = destroy_loca_table}, .None

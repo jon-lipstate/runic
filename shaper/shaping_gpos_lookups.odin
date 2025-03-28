@@ -513,7 +513,7 @@ apply_extension_pos_subtable :: proc(
 }
 
 // Apply basic positioning using default advances
-apply_basic_positioning :: proc(font: ^Font, buffer: ^Shaping_Buffer) {
+apply_basic_positioning :: proc(font: ^Font, buffer: ^Shaping_Buffer, cache: ^Shaping_Cache) {
 	if buffer == nil {return}
 
 	// Get horizontal metrics (hmtx) table
@@ -528,7 +528,18 @@ apply_basic_positioning :: proc(font: ^Font, buffer: ^Shaping_Buffer) {
 	// Apply basic horizontal positioning based on glyph advance widths
 	for i := 0; i < len(buffer.glyphs); i += 1 {
 		glyph_id := buffer.glyphs[i].glyph_id
-		buffer.glyphs[i].metrics, _ = ttf.get_metrics(font, glyph_id)
+		if cache != nil {
+			m, has_m := cache.metrics[glyph_id]
+			if has_m {
+				buffer.glyphs[i].metrics = m
+				continue
+			}
+		}
+		metric, _ := ttf.get_metrics(font, glyph_id)
+		buffer.glyphs[i].metrics = metric
+		if cache != nil {
+			cache.metrics[glyph_id] = metric
+		}
 		// Get advance width from hmtx table
 		// fmt.println(
 		// 	"Metrics for ",
