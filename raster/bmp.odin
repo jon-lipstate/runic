@@ -336,67 +336,67 @@ rasterize_glyph :: proc(
 	bitmap: ^Bitmap,
 	size_px: f32,
 ) -> bool {
-	glyf, has_glyf := ttf.get_table(font, "glyf", ttf.load_glyf_table, ttf.Glyf_Table)
-	if !has_glyf {return false}
-	// Get the glyph outline
-	outline, ok := ttf.parse_glyph_outline(glyf, glyph_id)
-	if !ok {
-		fmt.println("Failed to parse glyph outline")
-		return false
-	}
-	defer ttf.destroy_glyph_outline(&outline)
-	// Empty glyphs (e.g., space) need no rendering
-	if outline.is_empty {return true}
+	// glyf, has_glyf := ttf.get_table(font, "glyf", ttf.load_glyf_table, ttf.Glyf_Table)
+	// if !has_glyf {return false}
+	// // Get the glyph outline
+	// outline, ok := ttf.parse_glyph_outline(glyf, glyph_id)
+	// if !ok {
+	// 	fmt.println("Failed to parse glyph outline")
+	// 	return false
+	// }
+	// defer ttf.destroy_glyph_outline(&outline)
+	// // Empty glyphs (e.g., space) need no rendering
+	// if outline.is_empty {return true}
 
-	// Create rasterizer context
-	scale := size_px / f32(font.units_per_em)
+	// // Create rasterizer context
+	// scale := size_px / f32(font.units_per_em)
 
-	rasterizer := Rasterizer {
-		bitmap   = bitmap,
-		font     = font,
-		size_px  = size_px,
-		glyph_id = glyph_id,
-		scale    = scale,
-		center_x = f32(bitmap.width) / 2,
-		center_y = f32(bitmap.height) / 2,
-		bbox     = outline.bounds,
-	}
-	// fmt.printf(
-	// 	"Rasterizer Starting State: size_px:%v, scale:%v, ctr_x:%v, ctr_y:%v, bbox:%v\n",
-	// 	rasterizer.size_px,
-	// 	rasterizer.scale,
-	// 	rasterizer.center_x,
-	// 	rasterizer.center_y,
-	// 	rasterizer.bbox,
-	// )
-	// Render each contour
-	for &contour, i in outline.contours {
-		// Render all segments in the contour
-		for segment, j in contour.segments {
-			// fmt.println("Iter ij", i, j)
-			switch s in segment {
-			case ttf.Line_Segment:
-				// fmt.println(s)
-				// Transform points to bitmap space
-				x1, y1 := transform_point_f32(&rasterizer, s.a[0], s.a[1])
-				x2, y2 := transform_point_f32(&rasterizer, s.b[0], s.b[1])
-				// fmt.println("calling draw_line", x1, y1, x2, y2)
-				// Draw the line
-				draw_line(bitmap, x1, y1, x2, y2, 0)
+	// rasterizer := Rasterizer {
+	// 	bitmap   = bitmap,
+	// 	font     = font,
+	// 	size_px  = size_px,
+	// 	glyph_id = glyph_id,
+	// 	scale    = scale,
+	// 	center_x = f32(bitmap.width) / 2,
+	// 	center_y = f32(bitmap.height) / 2,
+	// 	bbox     = outline.bounds,
+	// }
+	// // fmt.printf(
+	// // 	"Rasterizer Starting State: size_px:%v, scale:%v, ctr_x:%v, ctr_y:%v, bbox:%v\n",
+	// // 	rasterizer.size_px,
+	// // 	rasterizer.scale,
+	// // 	rasterizer.center_x,
+	// // 	rasterizer.center_y,
+	// // 	rasterizer.bbox,
+	// // )
+	// // Render each contour
+	// for &contour, i in outline.contours {
+	// 	// Render all segments in the contour
+	// 	for segment, j in contour.segments {
+	// 		// fmt.println("Iter ij", i, j)
+	// 		switch s in segment {
+	// 		case ttf.Line_Segment:
+	// 			// fmt.println(s)
+	// 			// Transform points to bitmap space
+	// 			x1, y1 := transform_point_f32(&rasterizer, s.a[0], s.a[1])
+	// 			x2, y2 := transform_point_f32(&rasterizer, s.b[0], s.b[1])
+	// 			// fmt.println("calling draw_line", x1, y1, x2, y2)
+	// 			// Draw the line
+	// 			draw_line(bitmap, x1, y1, x2, y2, 0)
 
-			case ttf.Quad_Bezier_Segment:
-				fmt.println(s)
-				// Transform points to bitmap space
-				x1, y1 := transform_point_f32(&rasterizer, s.a[0], s.a[1])
-				cx, cy := transform_point_f32(&rasterizer, s.control[0], s.control[1])
-				x2, y2 := transform_point_f32(&rasterizer, s.b[0], s.b[1])
-				// fmt.println("calling draw_quad_bezier", x1, y1, cx, cy, x2, y2)
+	// 		case ttf.Quad_Bezier_Segment:
+	// 			fmt.println(s)
+	// 			// Transform points to bitmap space
+	// 			x1, y1 := transform_point_f32(&rasterizer, s.a[0], s.a[1])
+	// 			cx, cy := transform_point_f32(&rasterizer, s.control[0], s.control[1])
+	// 			x2, y2 := transform_point_f32(&rasterizer, s.b[0], s.b[1])
+	// 			// fmt.println("calling draw_quad_bezier", x1, y1, cx, cy, x2, y2)
 
-				// Draw the quadratic bezier
-				draw_quad_bezier(bitmap, x1, y1, cx, cy, x2, y2, 0)
-			}
-		}
-	}
+	// 			// Draw the quadratic bezier
+	// 			draw_quad_bezier(bitmap, x1, y1, cx, cy, x2, y2, 0)
+	// 		}
+	// 	}
+	// }
 
 	return true
 }

@@ -75,23 +75,19 @@ destroy_hmtx_table :: proc(data: rawptr) {
 //////////////////////////////////////////////////////////////////////////////////////////
 
 // Get horizontal metrics for a specific glyph
-get_h_metrics :: proc(
+htmx_get_metrics :: proc(
 	hmtx: ^OpenType_Hmtx_Table,
 	glyph_id: Glyph,
 ) -> (
 	advance_width: u16,
 	lsb: i16,
 ) {
-	if hmtx == nil || len(hmtx.metrics) == 0 {
-		return 0, 0
-	}
+	if hmtx == nil || len(hmtx.metrics) == 0 {return}
 
 	gid := uint(glyph_id)
 
 	// Bounds check
-	if gid >= uint(hmtx.num_glyphs) {
-		return 0, 0
-	}
+	if bounds_check(gid >= uint(hmtx.num_glyphs)) {return}
 
 	if gid < uint(hmtx.num_of_long_metrics) {
 		metric := hmtx.metrics[gid]

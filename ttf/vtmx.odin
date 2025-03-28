@@ -77,7 +77,7 @@ destroy_vmtx_table :: proc(data: rawptr) {
 // API Functions
 
 // Get vertical metrics for a specific glyph
-get_v_metrics :: proc(
+vtmx_get_metrics :: proc(
 	vmtx: ^OpenType_Vmtx_Table,
 	glyph_id: Glyph,
 ) -> (
@@ -112,78 +112,78 @@ get_v_metrics :: proc(
 	return advance_height, tsb
 }
 
-// Get just the advance height for a glyph
-get_advance_height :: proc(vmtx: ^OpenType_Vmtx_Table, glyph_id: Glyph) -> u16 {
-	if vmtx == nil || len(vmtx.metrics) == 0 {return 0}
+// // Get just the advance height for a glyph
+// get_advance_height :: proc(vmtx: ^OpenType_Vmtx_Table, glyph_id: Glyph) -> u16 {
+// 	if vmtx == nil || len(vmtx.metrics) == 0 {return 0}
 
-	gid := uint(glyph_id)
+// 	gid := uint(glyph_id)
 
-	// Bounds check
-	if gid >= uint(vmtx.num_glyphs) {return 0}
+// 	// Bounds check
+// 	if gid >= uint(vmtx.num_glyphs) {return 0}
 
-	// For all glyphs beyond numOfVMetrics, use the last metrics entry's advance
-	metric_index := min(gid, uint(vmtx.num_of_long_metrics) - 1)
-	return u16(vmtx.metrics[metric_index].advance_height)
-}
+// 	// For all glyphs beyond numOfVMetrics, use the last metrics entry's advance
+// 	metric_index := min(gid, uint(vmtx.num_of_long_metrics) - 1)
+// 	return u16(vmtx.metrics[metric_index].advance_height)
+// }
 
-// Get just the top side bearing for a glyph
-get_top_side_bearing :: proc(vmtx: ^OpenType_Vmtx_Table, glyph_id: Glyph) -> i16 {
-	if vmtx == nil {return 0}
+// // Get just the top side bearing for a glyph
+// get_top_side_bearing :: proc(vmtx: ^OpenType_Vmtx_Table, glyph_id: Glyph) -> i16 {
+// 	if vmtx == nil {return 0}
 
-	gid := uint(glyph_id)
+// 	gid := uint(glyph_id)
 
-	// Bounds check
-	if gid >= uint(vmtx.num_glyphs) {return 0}
+// 	// Bounds check
+// 	if gid >= uint(vmtx.num_glyphs) {return 0}
 
-	if gid < uint(vmtx.num_of_long_metrics) {
-		// Get TSB from metrics array
-		return i16(vmtx.metrics[gid].top_side_bearing)
-	} else {
-		// Get TSB from additional bearings array
-		tsb_index := gid - uint(vmtx.num_of_long_metrics)
-		if tsb_index < uint(len(vmtx.top_side_bearings)) {
-			return i16(vmtx.top_side_bearings[tsb_index])
-		}
-	}
+// 	if gid < uint(vmtx.num_of_long_metrics) {
+// 		// Get TSB from metrics array
+// 		return i16(vmtx.metrics[gid].top_side_bearing)
+// 	} else {
+// 		// Get TSB from additional bearings array
+// 		tsb_index := gid - uint(vmtx.num_of_long_metrics)
+// 		if tsb_index < uint(len(vmtx.top_side_bearings)) {
+// 			return i16(vmtx.top_side_bearings[tsb_index])
+// 		}
+// 	}
 
-	return 0
-}
+// 	return 0
+// }
 
-// Calculate the bottom side bearing for a glyph
-// Note: This requires glyph bounding box data, typically from the glyf table
-calculate_bottom_side_bearing :: proc(
-	vmtx: ^OpenType_Vmtx_Table,
-	glyph_id: Glyph,
-	glyph_height: i16,
-	glyph_ymin: i16,
-) -> i16 {
-	if vmtx == nil {return 0}
+// // Calculate the bottom side bearing for a glyph
+// // Note: This requires glyph bounding box data, typically from the glyf table
+// calculate_bottom_side_bearing :: proc(
+// 	vmtx: ^OpenType_Vmtx_Table,
+// 	glyph_id: Glyph,
+// 	glyph_height: i16,
+// 	glyph_ymin: i16,
+// ) -> i16 {
+// 	if vmtx == nil {return 0}
 
-	// Get top side bearing and advance height
-	advance_height, tsb := get_v_metrics(vmtx, glyph_id)
+// 	// Get top side bearing and advance height
+// 	advance_height, tsb := vtmx_get_v_metrics(vmtx, glyph_id)
 
-	// Calculate bottom side bearing: advanceHeight - (TSB + (yMax - yMin))
-	// where yMax - yMin is the glyph height
-	return i16(advance_height) - (tsb + glyph_height)
-}
+// 	// Calculate bottom side bearing: advanceHeight - (TSB + (yMax - yMin))
+// 	// where yMax - yMin is the glyph height
+// 	return i16(advance_height) - (tsb + glyph_height)
+// }
 
-// Calculate the vertical origin for a glyph in vertical typesetting
-// Note: This is a simplified approach; some fonts have more complex calculations
-// TODO:
-calculate_vertical_origin :: proc(
-	vmtx: ^OpenType_Vmtx_Table,
-	glyph_id: Glyph,
-	glyph_height: i16,
-	units_per_em: u16,
-) -> i16 {
-	if vmtx == nil {return 0}
+// // Calculate the vertical origin for a glyph in vertical typesetting
+// // Note: This is a simplified approach; some fonts have more complex calculations
+// // TODO:
+// calculate_vertical_origin :: proc(
+// 	vmtx: ^OpenType_Vmtx_Table,
+// 	glyph_id: Glyph,
+// 	glyph_height: i16,
+// 	units_per_em: u16,
+// ) -> i16 {
+// 	if vmtx == nil {return 0}
 
-	advance_height := get_advance_height(vmtx, glyph_id)
+// 	advance_height := get_advance_height(vmtx, glyph_id)
 
-	// In many CJK fonts, the vertical origin is typically at:
-	// - The center of the glyph horizontally
-	// - Half the em height from the top of the glyph vertically
-	// TODO:
-	// A simple approximation: place origin at half the advance height
-	return i16(advance_height) / 2
-}
+// 	// In many CJK fonts, the vertical origin is typically at:
+// 	// - The center of the glyph horizontally
+// 	// - Half the em height from the top of the glyph vertically
+// 	// TODO:
+// 	// A simple approximation: place origin at half the advance height
+// 	return i16(advance_height) / 2
+// }

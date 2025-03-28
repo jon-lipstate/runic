@@ -15,6 +15,7 @@ Extracted_Glyph :: union {
 
 Extracted_Simple_Glyph :: struct {
 	// Points from the font file
+	glyph_id:          Glyph,
 	points:            [][2]i16, // Allocated
 	on_curve:          []bool, // Allocated
 	contour_endpoints: []u16, // Allocated - Specifies the slices of `points` that form distinct contours
@@ -25,12 +26,13 @@ Extracted_Simple_Glyph :: struct {
 }
 
 Extracted_Compound_Glyph :: struct {
+	glyph_id:     Glyph,
 	components:   []Glyph_Component, // Allocated
 	instructions: []byte,
 }
 
 Glyph_Component :: struct {
-	glyph_id:      u16, // Reference to another glyph
+	glyph_id:      Glyph,
 	transform:     matrix[2, 3]f32,
 	round_to_grid: bool,
 }
@@ -287,7 +289,7 @@ extract_compound_glyph :: proc(
 
 		// Add the component
 		glyph_component := Glyph_Component {
-			glyph_id      = u16(component.glyph_index),
+			glyph_id      = Glyph(component.glyph_index),
 			transform     = mat,
 			round_to_grid = .ROUND_XY_TO_GRID in component.flags,
 		}

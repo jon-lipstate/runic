@@ -44,11 +44,13 @@ Shaping_Buffer :: struct {
 // A shaped glyph with all necessary information
 Glyph_Info :: struct {
 	glyph_id:            Glyph,
+	metrics:             ttf.Glyph_Metrics,
 	cluster:             uint, // Index to first character in source text
 	category:            ttf.Glyph_Category,
 	flags:               Glyph_Flags,
 	ligature_components: Ligature_Info, // For ligatures and complex substitutions
 }
+
 
 // Information for ligature components
 Ligature_Info :: bit_field u32 {
@@ -97,7 +99,6 @@ Glyph_Position :: struct {
 	y_advance: i16, // Vertical advance (usually 0 in horizontal layouts)
 	x_offset:  i16, // Horizontal offset from default position
 	y_offset:  i16, // Vertical offset from default position
-	lsb:       i16,
 }
 
 Direction :: enum {

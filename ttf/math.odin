@@ -760,7 +760,7 @@ get_closest_math_variant :: proc(
 		if is_vertical {
 			vmtx, vmtx_ok := get_table(math.font, "vmtx", load_vmtx_table, OpenType_Vmtx_Table)
 			if vmtx_ok {
-				actual_size = get_advance_height(vmtx, glyph_id)
+				actual_size, _ = vtmx_get_metrics(vmtx, glyph_id)
 			}
 		} else {
 			actual_size = get_advance_width(hmtx, glyph_id)

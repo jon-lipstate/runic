@@ -528,16 +528,19 @@ apply_basic_positioning :: proc(font: ^Font, buffer: ^Shaping_Buffer) {
 	// Apply basic horizontal positioning based on glyph advance widths
 	for i := 0; i < len(buffer.glyphs); i += 1 {
 		glyph_id := buffer.glyphs[i].glyph_id
-
+		buffer.glyphs[i].metrics, _ = ttf.get_metrics(font, glyph_id)
 		// Get advance width from hmtx table
-		advance, lsb := ttf.get_h_metrics(hmtx, glyph_id)
-		// fmt.printf("htmx gid:%v, advance:%v, lsb:%v\n", glyph_id, advance, lsb)
+		fmt.println(
+			"Metrics for ",
+			glyph_id,
+			rune(buffer.runes[buffer.glyphs[i].cluster]),
+			buffer.glyphs[i].metrics,
+		)
 		buffer.positions[i] = Glyph_Position {
-			x_advance = i16(advance),
+			x_advance = i16(buffer.glyphs[i].metrics.advance_width),
 			y_advance = 0,
 			x_offset  = 0,
 			y_offset  = 0,
-			lsb       = lsb,
 		}
 	}
 }
