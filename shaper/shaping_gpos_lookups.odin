@@ -530,12 +530,12 @@ apply_basic_positioning :: proc(font: ^Font, buffer: ^Shaping_Buffer) {
 		glyph_id := buffer.glyphs[i].glyph_id
 		buffer.glyphs[i].metrics, _ = ttf.get_metrics(font, glyph_id)
 		// Get advance width from hmtx table
-		fmt.println(
-			"Metrics for ",
-			glyph_id,
-			rune(buffer.runes[buffer.glyphs[i].cluster]),
-			buffer.glyphs[i].metrics,
-		)
+		// fmt.println(
+		// 	"Metrics for ",
+		// 	glyph_id,
+		// 	rune(buffer.runes[buffer.glyphs[i].cluster]),
+		// 	buffer.glyphs[i].metrics,
+		// )
 		buffer.positions[i] = Glyph_Position {
 			x_advance = i16(buffer.glyphs[i].metrics.advance_width),
 			y_advance = 0,

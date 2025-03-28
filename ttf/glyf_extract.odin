@@ -76,7 +76,6 @@ extract_simple_glyph :: proc(
 	result: Extracted_Glyph,
 	ok: bool,
 ) {
-	// Get number of contours
 	num_contours := glyph.header.number_of_contours
 	if num_contours <= 0 {return}
 
@@ -100,10 +99,10 @@ extract_simple_glyph :: proc(
 	defer if !ok {delete(points)}
 	on_curve := make([]bool, point_count, allocator)
 	defer if !ok {delete(on_curve)}
-	// FIXME: flags should be on scratch
+
+	// FIXME: use scratch space! 
 	flags := make([]Simple_Glyph_Flags, point_count, allocator)
 	defer delete(flags)
-
 
 	// Calculate offsets for parsing
 	end_points_offset := uint(size_of(OpenType_Glyf_Entry_Header))
@@ -113,36 +112,40 @@ extract_simple_glyph :: proc(
 
 	// Start parsing points
 	current_offset := flags_offset
-	point_idx := 0
 
 	// Flag parsing pass
-	for point_idx < point_count {
+	for point_idx := 0; point_idx < point_count; {
 		if bounds_check(current_offset >= uint(len(glyph.slice))) {return}
 
 		flags[point_idx] = read_simple_glyph_flags(glyph.slice[current_offset])
 		current_offset += 1
 		on_curve[point_idx] = .ON_CURVE_POINT in flags[point_idx]
-		// Handle repeat flag
+
 		if .REPEAT_FLAG in flags[point_idx] {
 			if bounds_check(current_offset >= uint(len(glyph.slice))) {return}
 
-			// Get repeat count
 			repeat_count := int(glyph.slice[current_offset])
 			current_offset += 1
 
-			// Check if we have enough space for all repeats
-			if point_idx + repeat_count >= point_count {
+			// Make sure we don't exceed point count
+			if point_idx + repeat_count + 1 > point_count {
 				repeat_count = point_count - point_idx - 1
+				if repeat_count <= 0 {
+					point_idx += 1
+					continue
+				}
 			}
 
-			// Set the repeated flags
-			repeating_flag := flags[point_idx]
-			repeating_flag ~= {.REPEAT_FLAG} // Clear repeat flag for copies
+			// Copy flag (without REPEAT_FLAG) to subsequent points
+			repeat_flag := flags[point_idx]
+			repeat_flag &= ~Simple_Glyph_Flags{.REPEAT_FLAG}
 
 			for j := 0; j < repeat_count; j += 1 {
 				point_idx += 1
-				flags[point_idx] = repeating_flag
-				on_curve[point_idx] = .ON_CURVE_POINT in repeating_flag
+				if point_idx >= point_count {break}
+
+				flags[point_idx] = repeat_flag
+				on_curve[point_idx] = .ON_CURVE_POINT in repeat_flag
 			}
 		}
 
@@ -150,17 +153,6 @@ extract_simple_glyph :: proc(
 	}
 
 	// X coordinates
-	current_offset = flags_offset
-	// Skip past all flags
-	for i := 0; i < point_count; i += 1 {
-		flag := flags[i]
-		if .REPEAT_FLAG in flag {
-			current_offset += 1 // Skip repeat count
-		}
-		current_offset += 1 // Flag byte
-	}
-
-	// Now parse X coordinates
 	x_coord := i16(0)
 	for i := 0; i < point_count; i += 1 {
 		flag := flags[i]
@@ -192,6 +184,25 @@ extract_simple_glyph :: proc(
 		points[i][0] = x_coord
 	}
 
+	when ODIN_DEBUG {
+		// Check if we have enough buffer for Y coordinates
+		needed_buffer := 0
+		for i := 0; i < point_count; i += 1 {
+			flag := flags[i]
+
+			if .Y_SHORT_VECTOR in flag {
+				needed_buffer += 1 // 1-byte Y coordinate
+			} else if .Y_IS_SAME not_in flag {
+				needed_buffer += 2 // 2-byte Y coordinate
+			}
+		}
+		if bounds_check(current_offset + uint(needed_buffer) > uint(len(glyph.slice))) {
+			fmt.println("Y-OFFSET ERROR")
+			return
+		}
+	}
+
+
 	// Y coordinates
 	y_coord := i16(0)
 	for i := 0; i < point_count; i += 1 {
@@ -204,7 +215,6 @@ extract_simple_glyph :: proc(
 			delta := i16(glyph.slice[current_offset])
 			current_offset += 1
 
-			// If Y_IS_SAME is clear, the value is negative
 			if .Y_IS_SAME not_in flag {
 				delta = -delta
 			}
@@ -225,6 +235,7 @@ extract_simple_glyph :: proc(
 	}
 
 	simple := Extracted_Simple_Glyph {
+		glyph_id          = glyph.index,
 		points            = points,
 		on_curve          = on_curve,
 		contour_endpoints = endpoints,
@@ -306,11 +317,10 @@ extract_compound_glyph :: proc(
 	// Extract instructions if present
 	instructions: []byte
 	if has_instructions {
-		if bounds_check(instructions_offset + 2 <= uint(len(glyph.slice))) {
+		if !bounds_check(instructions_offset + 2 >= uint(len(glyph.slice))) {
 			instruction_count := uint(read_u16(glyph.slice, instructions_offset))
 			instructions_offset += 2
-
-			if bounds_check(instructions_offset + instruction_count <= uint(len(glyph.slice))) {
+			if !bounds_check(instructions_offset + instruction_count > uint(len(glyph.slice))) {
 				instructions =
 				glyph.slice[instructions_offset:instructions_offset + instruction_count]
 			}

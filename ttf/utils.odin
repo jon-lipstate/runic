@@ -262,9 +262,9 @@ xbounds_check :: #force_inline proc(condition: bool, loc := #caller_location) ->
 	}
 	return condition
 }
-bounds_check :: proc(condition: bool, description: any = nil, loc := #caller_location) -> bool {
+bounds_check :: proc(condition: bool, loc := #caller_location) -> bool {
 	if condition {
-		fmt.printf("BOUNDS CHECK FAILURE at %v:%v: %v\n", loc.file_path, loc.line, description)
+		fmt.printf("BOUNDS CHECK FAILURE at %v:%v\n", loc.file_path, loc.line)
 		return true
 	}
 	return false
