@@ -36,43 +36,9 @@ Shaping_Cache :: struct {
 	// coverage_accelerators: map[uint]Coverage_Accelerator, // index is abs offset of entire file
 	cmap_accel:           CMAP_Accelerator,
 	gsub_accel:           GSUB_Accelerator,
-	metrics:              map[Glyph]ttf.Glyph_Metrics,
+	metrics:              map[Glyph]ttf.Glyph_Metrics, // TODO: make this a dense array (920kb for full dense@65k glyphs)
 }
 
-// Coverage_Accelerator :: struct {
-// 	table_offset: uint, // Offset to coverage table
-// 	format:       u16, // Format of coverage table (1 or 2)
-
-// 	// For Format 1 (direct array)
-// 	glyphs:       []Glyph, // Sorted array of covered glyphs
-
-// 	// For Format 2 (ranges)
-// 	ranges:       []struct {
-// 		// Array of range records
-// 		start: Glyph, // First glyph in range 
-// 		end:   Glyph, // Last glyph in range
-// 		index: u16, // Starting coverage index
-// 	},
-// }
-
-// Get or create a shaping cache entry
-//
-// Returns `nil` if there is no gsub table
-// Get or create a shaping cache entry
-//
-// Returns `nil` if there is no gsub table
-// Get or create a shaping cache entry
-//
-// Returns `nil` if there are no applicable shaping tables
-
-// // Debug: Print features that will be applied
-// feats := get_enabled_features(applied_features)
-// fmt.print("Applied GPOS Features: ")
-// for f in feats {
-// 	fmt.printf("%v, ", f)
-// }
-// fmt.println()
-// fmt.println("GPOS lookup indices:", gpos_lookup_indices[:])
 get_or_create_shape_cache :: proc(
 	engine: ^Rune,
 	font: ^Font,
@@ -276,7 +242,6 @@ get_or_create_shape_cache :: proc(
 	}
 
 	if has_shaping_data {
-		// fmt.println("Created Shaping_Cache")
 		// fmt.println("GSUB Lookups", new_cache.gsub_lookups)
 		// fmt.println("GPOS Lookups", new_cache.gpos_lookups)
 		engine.caches[cache_key] = new_cache
@@ -285,43 +250,3 @@ get_or_create_shape_cache :: proc(
 
 	return nil
 }
-
-// is_glyph_covered :: proc(acc: ^Coverage_Accelerator, glyph: Glyph) -> (index: u16, covered: bool) {
-// 	if acc.format == 1 {
-// 		// Binary search in sorted array
-// 		low, high := 0, len(acc.glyphs) - 1
-// 		for low <= high {
-// 			mid := (low + high) >> 1
-// 			if acc.glyphs[mid] < glyph {
-// 				low = mid + 1
-// 			} else if acc.glyphs[mid] > glyph {
-// 				high = mid - 1
-// 			} else {
-// 				return u16(mid), true
-// 			}
-// 		}
-// 	} else { 	// Format 2
-// 		// Binary search in ranges
-// 		low, high := 0, len(acc.ranges) - 1
-// 		for low <= high {
-// 			mid := (low + high) >> 1
-// 			if acc.ranges[mid].end < glyph {
-// 				low = mid + 1
-// 			} else if acc.ranges[mid].start > glyph {
-// 				high = mid - 1
-// 			} else {
-// 				// Glyph is in this range
-// 				index := acc.ranges[mid].index + u16(glyph - acc.ranges[mid].start)
-// 				return index, true
-// 			}
-// 		}
-// 	}
-// 	return 0, false
-// }
-
-// // Then look up or create the accelerator
-// accelerator, exists := cache.coverage_accelerators[absolute_coverage_offset]
-// if !exists {
-//     accelerator = create_coverage_accelerator(font.data, absolute_coverage_offset)
-//     cache.coverage_accelerators[absolute_coverage_offset] = accelerator
-// }

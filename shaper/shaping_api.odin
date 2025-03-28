@@ -48,7 +48,7 @@ shape_text_with_font :: proc(
 		actual_features,
 		disabled_features,
 	)
-
+	fmt.println("GSUB Lookups: ", cache.gsub_lookups)
 	// Shape the text with the buffer and cache
 	ok = shape_with_cache(engine, font, buffer, cache)
 	if !ok {
@@ -60,7 +60,6 @@ shape_text_with_font :: proc(
 }
 
 
-// Shape text using the cached data
 // Shape text using the cached data
 shape_with_cache :: proc(
 	engine: ^Rune,
@@ -76,10 +75,6 @@ shape_with_cache :: proc(
 	reserve(&buffer.glyphs, len(buffer.runes))
 	map_runes_to_glyphs(font, buffer, cache)
 
-
-	// for gi in buffer.glyphs {
-	// 	fmt.printf("%v -> %v \n", buffer.runes[gi.cluster], gi.glyph_id)
-	// }
 
 	// If cache couldn't be created, fall back to basic shaping
 	if cache == nil {
@@ -97,6 +92,10 @@ shape_with_cache :: proc(
 			apply_gsub_lookups(gsub, cache.gsub_lookups, buffer)
 		}
 	}
+
+	// for gi in buffer.glyphs {
+	// 	fmt.printf("%v -> %v \n", buffer.runes[gi.cluster], gi.glyph_id)
+	// }
 
 	// Allocate and initialize glyph positions
 	resize(&buffer.positions, len(buffer.glyphs))

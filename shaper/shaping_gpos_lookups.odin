@@ -528,30 +528,26 @@ apply_basic_positioning :: proc(font: ^Font, buffer: ^Shaping_Buffer, cache: ^Sh
 	// Apply basic horizontal positioning based on glyph advance widths
 	for i := 0; i < len(buffer.glyphs); i += 1 {
 		glyph_id := buffer.glyphs[i].glyph_id
-		if cache != nil {
-			m, has_m := cache.metrics[glyph_id]
-			if has_m {
-				buffer.glyphs[i].metrics = m
-				continue
-			}
-		}
-		metric, _ := ttf.get_metrics(font, glyph_id)
-		buffer.glyphs[i].metrics = metric
-		if cache != nil {
+		assert(cache != nil) // FIXME: technically can call without cache..
+		m, has_m := cache.metrics[glyph_id]
+		if has_m {
+			buffer.glyphs[i].metrics = m
+		} else {
+			metric, _ := ttf.get_metrics(font, glyph_id)
+			buffer.glyphs[i].metrics = metric
 			cache.metrics[glyph_id] = metric
 		}
-		// Get advance width from hmtx table
-		// fmt.println(
-		// 	"Metrics for ",
-		// 	glyph_id,
-		// 	rune(buffer.runes[buffer.glyphs[i].cluster]),
-		// 	buffer.glyphs[i].metrics,
-		// )
 		buffer.positions[i] = Glyph_Position {
 			x_advance = i16(buffer.glyphs[i].metrics.advance_width),
 			y_advance = 0,
 			x_offset  = 0,
 			y_offset  = 0,
 		}
+		// fmt.println(
+		// 	"Metrics for ",
+		// 	glyph_id,
+		// 	rune(buffer.runes[buffer.glyphs[i].cluster]),
+		// 	buffer.glyphs[i].metrics,
+		// )
 	}
 }
