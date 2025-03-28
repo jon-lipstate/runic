@@ -313,7 +313,7 @@ accelerate_single_substitution :: proc(
 		delta_glyph_id := ttf.read_i16(gsub.raw_data, subtable_offset + 4)
 		single_accel.delta_value = delta_glyph_id
 
-		// Pre-compute all mappings
+		// Pre-compute all mappings (order-independant; same delta to everyone)
 		for glyph, _ in single_accel.coverage.direct_map {
 			result_glyph := Glyph(int(glyph) + int(delta_glyph_id))
 			single_accel.mapping[glyph] = result_glyph
@@ -326,18 +326,47 @@ accelerate_single_substitution :: proc(
 		glyph_count := ttf.read_u16(gsub.raw_data, subtable_offset + 4)
 		substitute_offset := subtable_offset + 6
 
-		// Create mapping from coverage to substitutes
-		i := 0 // FIXME: map ordering not guaranteed!!!!!
-		for glyph, _ in single_accel.coverage.direct_map {
-			if i >= int(glyph_count) ||
-			   bounds_check(substitute_offset + uint(i) * 2 >= uint(len(gsub.raw_data))) {
-				i += 1
+		// Get glyphs from coverage in correct order
+		coverage_iter, coverage_ok := ttf.into_coverage_iter(gsub, 0, u16(coverage_offset))
+		if !coverage_ok {return}
+
+		coverage_index := 0
+		for entry in ttf.iter_coverage_entry(&coverage_iter) {
+			if coverage_index >= int(glyph_count) ||
+			   bounds_check(
+				   substitute_offset + uint(coverage_index) * 2 >= uint(len(gsub.raw_data)),
+			   ) {
+				coverage_index += 1
 				continue
 			}
 
-			subst_glyph := ttf.Glyph(ttf.read_u16(gsub.raw_data, substitute_offset + uint(i) * 2))
+			// Get the input glyph from the coverage entry
+			glyph: Glyph
+			switch e in entry {
+			case ttf.Coverage_Format1_Entry:
+				glyph = Glyph(e.glyph)
+			case ttf.Coverage_Format2_Entry:
+				// For range entries, we need to handle each glyph in the range
+				for g := e.start; g <= e.end; g += 1 {
+					idx := e.start_index + u16(g - e.start)
+					if idx < glyph_count {
+						subst_glyph := ttf.Glyph(
+							ttf.read_u16(gsub.raw_data, substitute_offset + uint(idx) * 2),
+						)
+						single_accel.mapping[Glyph(g)] = subst_glyph
+					}
+				}
+				coverage_index += 1
+				continue
+			}
+
+			// Get the corresponding substitution glyph
+			subst_glyph := ttf.Glyph(
+				ttf.read_u16(gsub.raw_data, substitute_offset + uint(coverage_index) * 2),
+			)
 			single_accel.mapping[glyph] = subst_glyph
-			i += 1
+
+			coverage_index += 1
 		}
 	}
 
@@ -881,7 +910,6 @@ apply_gsub_with_accelerator :: proc(
 
 	// Apply each lookup in the optimized order
 	for lookup_idx in cache.gsub_lookups {
-		if lookup_idx != 11 {continue}
 		lookup_type, lookup_flags, lookup_offset, ok := ttf.get_lookup_info(gsub, lookup_idx)
 		if !ok {continue}
 
