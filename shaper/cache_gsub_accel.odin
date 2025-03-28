@@ -253,12 +253,10 @@ build_coverage_digest :: proc(gsub: ^ttf.GSUB_Table, coverage_offset: uint) -> C
 		case ttf.Coverage_Format1_Entry:
 			// Add to digest
 			glyph_id := uint(e.glyph)
-			digest_idx := glyph_id / 32
+			digest_idx := (glyph_id % 256) / 32 // Hash into 256-bit range
 			bit_pos := glyph_id % 32
+			digest.digest[digest_idx] |= (1 << bit_pos)
 
-			if digest_idx < 8 {
-				digest.digest[digest_idx] |= (1 << bit_pos)
-			}
 			glyph := Glyph(e.glyph)
 			// Add to direct map for small coverage sets
 			digest.direct_map[glyph] = true
@@ -268,12 +266,10 @@ build_coverage_digest :: proc(gsub: ^ttf.GSUB_Table, coverage_offset: uint) -> C
 			// Add all glyphs in the range
 			for gid := e.start; gid <= e.end; gid += 1 {
 				glyph_id := uint(gid)
-				digest_idx := glyph_id / 32
+				digest_idx := (glyph_id % 256) / 32 // Hash into 256-bit range
 				bit_pos := glyph_id % 32
+				digest.digest[digest_idx] |= (1 << bit_pos)
 
-				if digest_idx < 8 {
-					digest.digest[digest_idx] |= (1 << bit_pos)
-				}
 				glyph := Glyph(gid)
 				// Add to direct map for small coverage sets
 				digest.direct_map[glyph] = true
@@ -303,7 +299,6 @@ accelerate_single_substitution :: proc(
 	if bounds_check(subtable_offset + 4 >= uint(len(gsub.raw_data))) {return}
 
 	format := ttf.read_u16(gsub.raw_data, subtable_offset)
-
 	// Initialize accelerator
 	single_accel := Single_Subst_Accelerator {
 		format   = .Single,
@@ -332,7 +327,7 @@ accelerate_single_substitution :: proc(
 		substitute_offset := subtable_offset + 6
 
 		// Create mapping from coverage to substitutes
-		i := 0
+		i := 0 // FIXME: map ordering not guaranteed!!!!!
 		for glyph, _ in single_accel.coverage.direct_map {
 			if i >= int(glyph_count) ||
 			   bounds_check(substitute_offset + uint(i) * 2 >= uint(len(gsub.raw_data))) {
@@ -839,11 +834,11 @@ build_feature_lookup_map :: proc(
 is_glyph_in_coverage :: proc(digest: Coverage_Digest, glyph: Glyph) -> bool {
 	// Quick rejection test using the bloom filter
 	glyph_id := uint(glyph)
-	digest_idx := glyph_id / 32
+	digest_idx := (glyph_id % 256) / 32 // Hash into 256-bit range
 	bit_pos := glyph_id % 32
 
 	// If the bit isn't set in the digest, the glyph is definitely not covered
-	if digest_idx >= 8 || (digest.digest[digest_idx] & (1 << bit_pos)) == 0 {
+	if (digest.digest[digest_idx] & (1 << bit_pos)) == 0 {
 		return false
 	}
 
@@ -886,6 +881,7 @@ apply_gsub_with_accelerator :: proc(
 
 	// Apply each lookup in the optimized order
 	for lookup_idx in cache.gsub_lookups {
+		if lookup_idx != 11 {continue}
 		lookup_type, lookup_flags, lookup_offset, ok := ttf.get_lookup_info(gsub, lookup_idx)
 		if !ok {continue}
 
@@ -968,7 +964,6 @@ apply_accelerated_single_subst :: proc(
 
 		if should_skip_glyph(glyph_info.category, lookup_flags) {continue}
 		if !is_glyph_in_coverage(accel.coverage, glyph_info.glyph_id) {continue}
-
 		if subst_glyph, found := accel.mapping[glyph_info.glyph_id]; found {
 			glyph_info.glyph_id = subst_glyph
 			glyph_info.flags += {.Substituted}
