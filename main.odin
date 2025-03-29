@@ -158,7 +158,7 @@ detect_language_for_text :: proc(text: string) -> shaper.Language_Tag {
 	#partial switch script {
 	case .arab:
 		return .ARA // Arabic
-	case .deva:
+	case .deva, .dev2:
 		return .HIN // Hindi
 	case .hira, .kana:
 		return .JAN // Japanese

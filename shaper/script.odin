@@ -39,6 +39,7 @@ Script_Tag :: enum u32 {
 	cyrl = 0x63_79_72_6C, // Cyrillic
 	cyrs = 0x63_79_72_73, // Cyrillic (Old Church Slavonic variant)
 	deva = 0x64_65_76_61, // Devanagari
+	dev2 = 0x64_65_76_32, // Devanagari (version 2)
 	diak = 0x64_69_61_6B, // Dives Akuru
 	dogr = 0x64_6F_67_72, // Dogra
 	dsrt = 0x64_73_72_74, // Deseret

@@ -143,7 +143,6 @@ get_or_create_shape_cache :: proc(
 						&gsub_processed_lookups,
 						&gsub_lookup_indices,
 					)
-
 					if ok {
 						new_cache.gsub_lookups = gsub_lookup_indices[:]
 					} else {

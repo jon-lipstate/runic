@@ -143,7 +143,7 @@ Alternate_Subst_Accelerator :: struct {
 	// Map from input glyph to alternate options
 	alternate_map: map[Glyph][]Glyph,
 }
-
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Helper to determine if cache has GSUB acceleration
 has_gsub_acceleration :: proc(cache: ^Shaping_Cache) -> bool {
 	// Check if any acceleration structures are populated
@@ -165,12 +165,18 @@ build_gsub_accelerator :: proc(font: ^Font, cache: ^Shaping_Cache) -> bool {
 			gsub,
 			lookup_idx,
 		)
-		if !lookup_ok {continue}
+		if !lookup_ok {
+			fmt.println("Lookup NOT ok, build_gsub_accelerator")
+			continue
+		}
 
 		// If this is an extension lookup, resolve it
 		if lookup_type == .Extension {
 			subtable_iter, iter_ok := ttf.into_subtable_iter(gsub, lookup_idx)
-			if !iter_ok {continue}
+			if !iter_ok {
+				fmt.println("failed to create into_subtable_iter", lookup_idx)
+				continue
+			}
 
 			for subtable_offset in ttf.iter_subtable_offset(&subtable_iter) {
 				accelerate_extension_substitution(gsub, accel, lookup_idx, subtable_offset)
@@ -179,6 +185,7 @@ build_gsub_accelerator :: proc(font: ^Font, cache: ^Shaping_Cache) -> bool {
 	}
 
 	// Second pass: Process all lookups, including resolved extensions
+	// FIXME: this is reprocessing the extension types since they are already done above
 	for lookup_idx in cache.gsub_lookups {
 		lookup_type, lookup_flags, lookup_offset, lookup_ok := ttf.get_lookup_info(
 			gsub,
@@ -204,14 +211,14 @@ build_gsub_accelerator :: proc(font: ^Font, cache: ^Shaping_Cache) -> bool {
 				accel.extension_map[lookup_idx] = ext_info
 				continue
 			}
-		}
+		} else {
+			// Process regular lookup subtables
+			subtable_iter, iter_ok := ttf.into_subtable_iter(gsub, lookup_idx)
+			if !iter_ok {continue}
 
-		// Process regular lookup subtables
-		subtable_iter, iter_ok := ttf.into_subtable_iter(gsub, lookup_idx)
-		if !iter_ok {continue}
-
-		for subtable_offset in ttf.iter_subtable_offset(&subtable_iter) {
-			process_lookup_subtable(gsub, accel, lookup_idx, lookup_type, subtable_offset)
+			for subtable_offset in ttf.iter_subtable_offset(&subtable_iter) {
+				process_lookup_subtable(gsub, accel, lookup_idx, lookup_type, subtable_offset)
+			}
 		}
 	}
 
@@ -288,14 +295,90 @@ build_coverage_digest :: proc(gsub: ^ttf.GSUB_Table, coverage_offset: uint) -> C
 	return digest
 }
 
-// Accelerate single substitution lookup
-accelerate_single_substitution :: proc(
+// Build feature to lookup mapping for faster feature selection
+build_feature_lookup_map :: proc(
+	gsub: ^ttf.GSUB_Table,
+	cache: ^Shaping_Cache,
+	accel: ^GSUB_Accelerator,
+) {
+	feature_iter, iter_ok := ttf.into_feature_iter_gsub(gsub, cache.gsub_lang_sys_offset)
+	if !iter_ok {return}
+
+	for feature_index, record, feature_offset in ttf.iter_feature_gsub(&feature_iter) {
+		feature_tag := Feature_Tag(ttf.tag_to_u32(record.feature_tag))
+
+		lookup_iter, lookup_ok := ttf.into_lookup_iter(gsub.raw_data, feature_offset)
+		if !lookup_ok {continue}
+
+		lookups := make([dynamic]u16)
+		for lookup_index in ttf.iter_lookup_index(&lookup_iter) {
+			append(&lookups, lookup_index)
+		}
+
+		accel.feature_lookups[feature_tag] = lookups[:]
+	}
+}
+
+process_lookup_subtable :: proc(
+	gsub: ^ttf.GSUB_Table,
+	accel: ^GSUB_Accelerator,
+	lookup_idx: u16,
+	lookup_type: ttf.GSUB_Lookup_Type,
+	subtable_offset: uint,
+) {
+	// Skip if we can't access the subtable
+	if bounds_check(subtable_offset + 2 >= uint(len(gsub.raw_data))) {return}
+
+	format := ttf.read_u16(gsub.raw_data, subtable_offset)
+	switch lookup_type {
+	case .Single:
+		accelerate_single_subtable(gsub, accel, lookup_idx, subtable_offset, format)
+
+	case .Multiple:
+		accelerate_multiple_subtable(gsub, accel, lookup_idx, subtable_offset, format)
+
+	case .Alternate:
+		accelerate_alternate_subtable(gsub, accel, lookup_idx, subtable_offset, format)
+
+	case .Ligature:
+		accelerate_ligature_subtable(gsub, accel, lookup_idx, subtable_offset, format)
+
+	case .Context:
+		accelerate_context_subtable(gsub, accel, lookup_idx, subtable_offset, format)
+
+	case .ChainedContext:
+		accelerate_chained_context_subtable(gsub, accel, lookup_idx, subtable_offset, format)
+
+	case .Extension:
+		// Should not happen here, as extensions are resolved earlier
+		fmt.println("Unexpected Extension subtable in process_lookup_subtable")
+
+	case .ReverseChained:
+		accelerate_reverse_chained_subtable(gsub, accel, lookup_idx, subtable_offset, format)
+	}
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Format 1
+accelerate_single_subtable :: proc(
 	gsub: ^ttf.GSUB_Table,
 	accel: ^GSUB_Accelerator,
 	lookup_idx: u16,
 	subtable_offset: uint,
-	coverage_offset: uint,
+	format: u16,
 ) {
+	if _, has_ss := accel.single_subst[lookup_idx]; has_ss {return} 	// previously processed via extension
+
+	if format != 1 && format != 2 {return}
+
+	coverage_offset := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
+	abs_coverage_offset := subtable_offset + uint(coverage_offset)
+
+	if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
+		digest := build_coverage_digest(gsub, abs_coverage_offset)
+		accel.coverage_digest[abs_coverage_offset] = digest
+	}
+
+	// accelerate_single_substitution(gsub, accel, lookup_idx, subtable_offset, abs_coverage_offset)
 	if bounds_check(subtable_offset + 4 >= uint(len(gsub.raw_data))) {return}
 
 	format := ttf.read_u16(gsub.raw_data, subtable_offset)
@@ -303,7 +386,7 @@ accelerate_single_substitution :: proc(
 	single_accel := Single_Subst_Accelerator {
 		format   = .Single,
 		is_delta = format == 1,
-		coverage = accel.coverage_digest[coverage_offset],
+		coverage = accel.coverage_digest[abs_coverage_offset],
 	}
 
 	if format == 1 {
@@ -327,7 +410,7 @@ accelerate_single_substitution :: proc(
 		substitute_offset := subtable_offset + 6
 
 		// Get glyphs from coverage in correct order
-		coverage_iter, coverage_ok := ttf.into_coverage_iter(gsub, 0, u16(coverage_offset))
+		coverage_iter, coverage_ok := ttf.into_coverage_iter(gsub, 0, u16(abs_coverage_offset))
 		if !coverage_ok {return}
 
 		coverage_index := 0
@@ -370,18 +453,199 @@ accelerate_single_substitution :: proc(
 		}
 	}
 
-	// Store the accelerator
 	accel.single_subst[lookup_idx] = single_accel
 }
-
-// Accelerate ligature substitution lookup
-accelerate_ligature_substitution :: proc(
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Format 2
+accelerate_multiple_subtable :: proc(
 	gsub: ^ttf.GSUB_Table,
 	accel: ^GSUB_Accelerator,
 	lookup_idx: u16,
 	subtable_offset: uint,
-	coverage_offset: uint,
+	format: u16,
 ) {
+	if _, has_accel := accel.multiple_subst[lookup_idx]; has_accel {return} 	// Previously Processed; Probably an Extension type
+
+	if format != 1 {return} 	// Multiple substitution only has format 1
+
+	coverage_offset := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
+	abs_coverage_offset := subtable_offset + uint(coverage_offset)
+
+	// Create coverage digest if needed
+	if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
+		digest := build_coverage_digest(gsub, abs_coverage_offset)
+		accel.coverage_digest[abs_coverage_offset] = digest
+	}
+
+
+	accel.multiple_subst[lookup_idx] = Multiple_Subst_Accelerator {
+		format       = .Multiple,
+		coverage     = accel.coverage_digest[abs_coverage_offset],
+		sequence_map = make(map[Glyph][]Glyph),
+	}
+	multiple_accel := &accel.multiple_subst[lookup_idx]
+
+	// Process coverage and sequences directly
+	coverage_iter, coverage_ok := ttf.into_coverage_iter(gsub, 0, u16(abs_coverage_offset))
+	if !coverage_ok {return}
+
+	// Start at the sequence offset array
+	sequence_offsets_base := subtable_offset + 6
+
+	// Process coverage entries and corresponding sequences
+	coverage_index := 0
+	for entry in ttf.iter_coverage_entry(&coverage_iter) {
+		switch e in entry {
+		case ttf.Coverage_Format1_Entry:
+			// Direct glyph
+			glyph := Glyph(e.glyph)
+			process_entry(
+				gsub,
+				accel,
+				lookup_idx,
+				glyph,
+				coverage_index,
+				sequence_offsets_base,
+				subtable_offset,
+			)
+			coverage_index += 1
+
+		case ttf.Coverage_Format2_Entry:
+			// Range of glyphs
+			for g := e.start; g <= e.end; g += 1 {
+				glyph := Glyph(g)
+				delta_idx := int(g - e.start)
+				actual_idx := coverage_index + delta_idx
+				process_entry(
+					gsub,
+					accel,
+					lookup_idx,
+					glyph,
+					actual_idx,
+					sequence_offsets_base,
+					subtable_offset,
+				)
+			}
+			coverage_index += int(e.end - e.start) + 1
+		}
+	}
+	process_entry :: proc(
+		gsub: ^ttf.GSUB_Table,
+		accel: ^GSUB_Accelerator,
+		lookup_idx: u16,
+		glyph: Glyph,
+		coverage_index: int,
+		sequence_offsets_base: uint,
+		subtable_offset: uint,
+	) -> (
+		ok: bool,
+	) {
+		multiple_accel := &accel.multiple_subst[lookup_idx]
+
+		// Get sequence offset for this coverage entry
+		if bounds_check(
+			sequence_offsets_base + uint(coverage_index) * 2 >= uint(len(gsub.raw_data)),
+		) {
+			return false
+		}
+
+		sequence_offset := ttf.read_u16(
+			gsub.raw_data,
+			sequence_offsets_base + uint(coverage_index) * 2,
+		)
+		abs_sequence_offset := subtable_offset + uint(sequence_offset)
+
+		// Read the sequence
+		if bounds_check(abs_sequence_offset + 2 >= uint(len(gsub.raw_data))) {
+			return false
+		}
+
+		glyph_count := ttf.read_u16(gsub.raw_data, abs_sequence_offset)
+
+		// Empty sequence means deletion
+		if glyph_count == 0 {
+			multiple_accel.sequence_map[glyph] = nil
+			return true
+		}
+
+		// Create sequence array
+		substitute_glyphs := make([]Glyph, glyph_count)
+		defer if !ok {delete(substitute_glyphs)}
+		ok = true
+
+		// Read each substitution glyph
+		for j := 0; j < int(glyph_count); j += 1 {
+			offset := abs_sequence_offset + 2 + uint(j) * 2
+
+			if bounds_check(offset + 2 > uint(len(gsub.raw_data))) {
+				ok = false
+				break
+			}
+
+			substitute_glyphs[j] = Glyph(ttf.read_u16(gsub.raw_data, offset))
+		}
+
+		if ok {
+			multiple_accel.sequence_map[glyph] = substitute_glyphs
+			return
+		} else {
+			ok = false
+			return
+		}
+	}
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Format 3
+accelerate_alternate_subtable :: proc(
+	gsub: ^ttf.GSUB_Table,
+	accel: ^GSUB_Accelerator,
+	lookup_idx: u16,
+	subtable_offset: uint,
+	format: u16,
+) {
+	if true do unimplemented()
+
+	if format != 1 {return} 	// Alternate substitution only has format 1
+
+	coverage_offset := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
+	abs_coverage_offset := subtable_offset + uint(coverage_offset)
+
+	if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
+		digest := build_coverage_digest(gsub, abs_coverage_offset)
+		accel.coverage_digest[abs_coverage_offset] = digest
+	}
+
+	// TODO: Implement alternate substitution acceleration
+	// Map glyphs to arrays of alternates
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Format 4
+accelerate_ligature_subtable :: proc(
+	gsub: ^ttf.GSUB_Table,
+	accel: ^GSUB_Accelerator,
+	lookup_idx: u16,
+	subtable_offset: uint,
+	format: u16,
+) {
+	if _, has_la := accel.ligature_subst[lookup_idx]; has_la {return} 	// already processed
+
+	// Ligature substitution only has format 1
+	if format != 1 {
+		fmt.printf("Unsupported Ligature subtable format: %d\n", format)
+		return
+	}
+
+	coverage_offset := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
+	abs_coverage_offset := subtable_offset + uint(coverage_offset)
+
+	// Create coverage digest if needed
+	if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
+		digest := build_coverage_digest(gsub, abs_coverage_offset)
+		accel.coverage_digest[abs_coverage_offset] = digest
+	}
+
+	// Call existing implementation
+	// accelerate_ligature_substitution(gsub, accel, lookup_idx, subtable_offset, abs_coverage_offset)
 	if bounds_check(subtable_offset + 6 >= uint(len(gsub.raw_data))) {
 		return
 	}
@@ -400,7 +664,7 @@ accelerate_ligature_substitution :: proc(
 	}
 
 	// Process the coverage as starting glyphs for ligatures
-	for glyph, _ in accel.coverage_digest[coverage_offset].direct_map {
+	for glyph, _ in accel.coverage_digest[abs_coverage_offset].direct_map {
 		lig_accel.starts_ligature[glyph] = true
 
 		// Initialize empty dynamic array for this glyph
@@ -414,7 +678,7 @@ accelerate_ligature_substitution :: proc(
 		}
 
 		// Get coverage glyph based on coverage index
-		coverage_iter, coverage_ok := ttf.into_coverage_iter(gsub, 0, u16(coverage_offset))
+		coverage_iter, coverage_ok := ttf.into_coverage_iter(gsub, 0, u16(abs_coverage_offset))
 		if !coverage_ok {
 			continue
 		}
@@ -516,94 +780,108 @@ accelerate_ligature_substitution :: proc(
 
 	accel.ligature_subst[lookup_idx] = lig_accel
 }
-
-// Accelerate extension substitution by resolving the actual lookup type
-accelerate_extension_substitution :: proc(
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Format 5
+accelerate_context_subtable :: proc(
 	gsub: ^ttf.GSUB_Table,
 	accel: ^GSUB_Accelerator,
 	lookup_idx: u16,
 	subtable_offset: uint,
+	format: u16,
 ) {
-	// Extension lookup structure (Format 1):
-	//   u16 format (always 1)
-	//   u16 extensionLookupType (actual lookup type 1-6, 8)
-	//   u32 extensionOffset (offset to the actual lookup table)
+	if true do unimplemented()
 
-	// Validate we can access the extension header
-	if bounds_check(subtable_offset + 8 >= uint(len(gsub.raw_data))) {return}
-
-	// Read extension format (should be 1)
-	extension_format := ttf.read_u16(gsub.raw_data, subtable_offset)
-	if extension_format != 1 {return}
-
-	// Read the actual lookup type and offset
-	extension_lookup_type := ttf.read_u16(gsub.raw_data, subtable_offset + size_of(u16))
-	extension_offset := ttf.read_u32(gsub.raw_data, subtable_offset + size_of(u16) * 2)
-
-	// Validate lookup type for GSUB
-	if extension_lookup_type < 1 || extension_lookup_type > 8 {return}
-
-	// fmt.printf(
-	// 	"Extension points to lookup type %d at relative offset %d\n",
-	// 	extension_lookup_type,
-	// 	extension_offset,
-	// )
-
-	// Calculate absolute offset to the actual lookup
-	actual_lookup_offset := subtable_offset + uint(extension_offset)
-
-	// fmt.printf(
-	// 	"Calculated absolute offset: %d (0x%x)\n",
-	// 	actual_lookup_offset,
-	// 	actual_lookup_offset,
-	// )
-
-	// Store extension information for later use
-	accel.extension_map[lookup_idx] = Extension_Info {
-		lookup_type      = ttf.GSUB_Lookup_Type(extension_lookup_type),
-		extension_offset = actual_lookup_offset,
-		is_processed     = false,
+	if format < 1 || format > 3 {
+		fmt.printf("Invalid Context format: %d\n", format)
+		return
 	}
 
-	// Process the actual lookup based on the extension lookup type
-	process_lookup_subtable(
-		gsub,
-		accel,
-		lookup_idx,
-		ttf.GSUB_Lookup_Type(extension_lookup_type),
-		actual_lookup_offset,
-	)
+	// Initialize Context Accelerator if not exists
+	if _, has_accel := accel.context_subst[lookup_idx]; !has_accel {
+		context_accel := Context_Accelerator {
+			format = format,
+		}
+
+		if format == 1 {
+			context_accel.rule_sets = make(map[Glyph][]Context_Rule)
+		} else if format == 2 {
+			context_accel.class_def = make(map[Glyph]u16)
+			context_accel.class_sets = make(map[u16][]Context_Rule)
+		}
+
+		accel.context_subst[lookup_idx] = context_accel
+	}
+
+	// Handle format-specific processing
+	if format == 1 {
+		// Format 1: Rule sets based on first glyph
+		coverage_offset := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
+		abs_coverage_offset := subtable_offset + uint(coverage_offset)
+
+		// Create coverage digest
+		if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
+			digest := build_coverage_digest(gsub, abs_coverage_offset)
+			accel.coverage_digest[abs_coverage_offset] = digest
+		}
+
+		// TODO: Process format 1 rules
+
+	} else if format == 2 {
+		// Format 2: Class-based rules
+		coverage_offset := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
+		abs_coverage_offset := subtable_offset + uint(coverage_offset)
+
+		// Create coverage digest
+		if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
+			digest := build_coverage_digest(gsub, abs_coverage_offset)
+			accel.coverage_digest[abs_coverage_offset] = digest
+		}
+
+		// TODO: Process class definition and rules
+
+	} else if format == 3 {
+		// Format 3: Coverage-based rules
+		// TODO: Process format 3 with multiple coverage tables
+	}
 }
-// Accelerate chained context substitution
-accelerate_chained_context_substitution :: proc(
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Format 6
+accelerate_chained_context_subtable :: proc(
 	gsub: ^ttf.GSUB_Table,
 	accel: ^GSUB_Accelerator,
 	lookup_idx: u16,
 	subtable_offset: uint,
-	coverage_offset: uint,
+	format: u16,
 ) {
-	if bounds_check(subtable_offset + 4 >= uint(len(gsub.raw_data))) {return}
-
-	format := ttf.read_u16(gsub.raw_data, subtable_offset)
-	if format < 1 || format > 3 {return} 	// Invalid format
+	if format < 1 || format > 3 {
+		fmt.printf("Invalid ChainedContext format: %d\n", format)
+		return
+	}
 
 	switch format {
 	case 1:
+		// Chain rule sets based on first glyph
 		accelerate_chained_context_format1(gsub, accel, lookup_idx, subtable_offset)
+
 	case 2:
+		// Class-based chain rules
 		accelerate_chained_context_format2(gsub, accel, lookup_idx, subtable_offset)
+
 	case 3:
+		// Coverage-based chain rules
 		accelerate_chained_context_format3(gsub, accel, lookup_idx, subtable_offset)
 	}
 }
 
-// Accelerate chained context format 1 (glyph-based)
+// Format 1 (glyph-based)
 accelerate_chained_context_format1 :: proc(
 	gsub: ^ttf.GSUB_Table,
 	accel: ^GSUB_Accelerator,
 	lookup_idx: u16,
 	subtable_offset: uint,
 ) {
+	if true do unimplemented()
+
 	chained_accel := Chained_Context_Accelerator {
 		format = 1,
 	}
@@ -640,13 +918,15 @@ accelerate_chained_context_format1 :: proc(
 	unimplemented()
 }
 
-// Accelerate chained context format 2 (class-based)
+// Format 2 (class-based)
 accelerate_chained_context_format2 :: proc(
 	gsub: ^ttf.GSUB_Table,
 	accel: ^GSUB_Accelerator,
 	lookup_idx: u16,
 	subtable_offset: uint,
 ) {
+	if true do unimplemented()
+
 	chained_accel := Chained_Context_Accelerator {
 		format = 2,
 	}
@@ -694,7 +974,7 @@ accelerate_chained_context_format2 :: proc(
 	unimplemented()
 }
 
-// Accelerate chained context format 3 (coverage-based)
+// Format 3 (coverage-based)
 accelerate_chained_context_format3 :: proc(
 	gsub: ^ttf.GSUB_Table,
 	accel: ^GSUB_Accelerator,
@@ -832,390 +1112,92 @@ accelerate_chained_context_format3 :: proc(
 	accel.chained_context_subst[lookup_idx] = chained_accel
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// Build feature to lookup mapping for faster feature selection
-build_feature_lookup_map :: proc(
+// Format 7
+accelerate_extension_substitution :: proc(
 	gsub: ^ttf.GSUB_Table,
-	cache: ^Shaping_Cache,
 	accel: ^GSUB_Accelerator,
+	lookup_idx: u16,
+	subtable_offset: uint,
 ) {
-	feature_iter, iter_ok := ttf.into_feature_iter_gsub(gsub, cache.gsub_lang_sys_offset)
-	if !iter_ok {return}
+	// Extension lookup structure (Format 1):
+	//   u16 format (always 1)
+	//   u16 extensionLookupType (actual lookup type 1-6, 8)
+	//   u32 extensionOffset (offset to the actual lookup table)
 
-	for feature_index, record, feature_offset in ttf.iter_feature_gsub(&feature_iter) {
-		feature_tag := Feature_Tag(ttf.tag_to_u32(record.feature_tag))
+	// Validate we can access the extension header
+	if bounds_check(subtable_offset + 8 >= uint(len(gsub.raw_data))) {return}
 
-		lookup_iter, lookup_ok := ttf.into_lookup_iter(gsub.raw_data, feature_offset)
-		if !lookup_ok {continue}
+	// Read extension format (should be 1)
+	extension_format := ttf.read_u16(gsub.raw_data, subtable_offset)
+	if extension_format != 1 {return}
 
-		lookups := make([dynamic]u16)
-		for lookup_index in ttf.iter_lookup_index(&lookup_iter) {
-			append(&lookups, lookup_index)
-		}
+	// Read the actual lookup type and offset
+	extension_lookup_type := ttf.read_u16(gsub.raw_data, subtable_offset + size_of(u16))
+	extension_offset := ttf.read_u32(gsub.raw_data, subtable_offset + size_of(u16) * 2)
 
-		accel.feature_lookups[feature_tag] = lookups[:]
-	}
-}
+	// Validate lookup type for GSUB
+	if extension_lookup_type < 1 || extension_lookup_type > 8 {return}
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Apply GSUB using accelerator
-// Check if a glyph is in a coverage digest
-is_glyph_in_coverage :: proc(digest: Coverage_Digest, glyph: Glyph) -> bool {
-	// Quick rejection test using the bloom filter
-	glyph_id := uint(glyph)
-	digest_idx := (glyph_id % 256) / 32 // Hash into 256-bit range
-	bit_pos := glyph_id % 32
+	// Calculate absolute offset to the actual lookup
+	actual_lookup_offset := subtable_offset + uint(extension_offset)
 
-	// If the bit isn't set in the digest, the glyph is definitely not covered
-	if (digest.digest[digest_idx] & (1 << bit_pos)) == 0 {
-		return false
+	// Store extension information for later use
+	accel.extension_map[lookup_idx] = Extension_Info {
+		lookup_type      = ttf.GSUB_Lookup_Type(extension_lookup_type),
+		extension_offset = actual_lookup_offset,
+		is_processed     = false,
 	}
 
-	// Potential match, check for exact match
-	if len(digest.direct_map) > 0 {
-		// For small coverage sets, check direct map
-		if _, in_coverage := digest.direct_map[glyph]; in_coverage {
-			return true
-		}
-	} else if len(digest.sorted_glyphs) > 0 {
-		// For larger sets, use binary search
-		low, high := 0, len(digest.sorted_glyphs) - 1
-		for low <= high {
-			mid := (low + high) / 2
-			if digest.sorted_glyphs[mid] < glyph {
-				low = mid + 1
-			} else if digest.sorted_glyphs[mid] > glyph {
-				high = mid - 1
-			} else {
-				return true
-			}
-		}
-	}
-
-	// Not found in the precise check
-	return false
-}
-
-apply_gsub_with_accelerator :: proc(
-	font: ^Font,
-	buffer: ^Shaping_Buffer,
-	cache: ^Shaping_Cache,
-) -> bool {
-	assert(cache != nil)
-
-	gsub, has_gsub := ttf.get_table(font, "GSUB", ttf.load_gsub_table, ttf.GSUB_Table)
-	if !has_gsub {return false}
-
-	accel := &cache.gsub_accel
-
-	// Apply each lookup in the optimized order
-	for lookup_idx in cache.gsub_lookups {
-		lookup_type, lookup_flags, lookup_offset, ok := ttf.get_lookup_info(gsub, lookup_idx)
-		if !ok {continue}
-
-		// If this is an extension lookup, use the resolved type
-		actual_lookup_type := lookup_type
-		if lookup_type == .Extension {
-			if ext_info, has_ext := accel.extension_map[lookup_idx]; has_ext {
-				actual_lookup_type = ext_info.lookup_type
-			} else {
-				// No extension info available, fall back to standard handling
-				apply_lookup(gsub, lookup_idx, lookup_type, lookup_flags, buffer)
-				continue
-			}
-		}
-
-		// Apply lookup based on resolved type
-		#partial switch actual_lookup_type {
-		case .Single:
-			if single_accel, has_accel := accel.single_subst[lookup_idx]; has_accel {
-				apply_accelerated_single_subst(buffer, single_accel, lookup_flags)
-			} else {
-				apply_lookup_fallback(gsub, buffer, lookup_idx, lookup_type, lookup_flags, accel)
-			}
-		case .Ligature:
-			if lig_accel, has_accel := accel.ligature_subst[lookup_idx]; has_accel {
-				apply_accelerated_ligature_subst(buffer, lig_accel, lookup_flags)
-			} else {
-				apply_lookup_fallback(gsub, buffer, lookup_idx, lookup_type, lookup_flags, accel)
-			}
-		case .ChainedContext:
-			if chain_accel, has_accel := accel.chained_context_subst[lookup_idx]; has_accel {
-				apply_accelerated_chained_context_subst(gsub, buffer, chain_accel, lookup_flags)
-			} else {
-				apply_lookup_fallback(gsub, buffer, lookup_idx, lookup_type, lookup_flags, accel)
-			}
-		// Other cases fall back to standard implementation
-		case:
-			apply_lookup_fallback(gsub, buffer, lookup_idx, lookup_type, lookup_flags, accel)
-		}
-	}
-	apply_lookup_fallback :: proc(
-		gsub: ^ttf.GSUB_Table,
-		buffer: ^Shaping_Buffer,
-		lookup_idx: u16,
-		lookup_type: ttf.GSUB_Lookup_Type,
-		lookup_flags: ttf.Lookup_Flags,
-		accel: ^GSUB_Accelerator,
-	) {
-		if lookup_type == .Extension {
-			// For extensions, apply using the resolved subtable
-			if ext_info, has_ext := accel.extension_map[lookup_idx]; has_ext {
-				apply_standard_lookup_at_offset(
-					gsub,
-					buffer,
-					lookup_idx,
-					ext_info.lookup_type,
-					lookup_flags,
-					ext_info.extension_offset,
-				)
-			} else {
-				// Fall back to regular extension handling
-				apply_lookup(gsub, lookup_idx, lookup_type, lookup_flags, buffer)
-			}
-		} else {
-			// Regular lookup
-			apply_lookup(gsub, lookup_idx, lookup_type, lookup_flags, buffer)
-		}
-	}
-	return true
+	// Process the actual lookup based on the extension lookup type
+	// TODO: should we do here or later in gsub_accel fn?? this is causing multiple calls to accelerate
+	process_lookup_subtable(
+		gsub,
+		accel,
+		lookup_idx,
+		ttf.GSUB_Lookup_Type(extension_lookup_type),
+		actual_lookup_offset,
+	)
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Apply accelerated single substitution
-apply_accelerated_single_subst :: proc(
-	buffer: ^Shaping_Buffer,
-	accel: Single_Subst_Accelerator,
-	lookup_flags: ttf.Lookup_Flags,
-) {
-	for i := 0; i < len(buffer.glyphs); i += 1 {
-		glyph_info := &buffer.glyphs[i]
-
-		if should_skip_glyph(glyph_info.category, lookup_flags) {continue}
-		if !is_glyph_in_coverage(accel.coverage, glyph_info.glyph_id) {continue}
-		if subst_glyph, found := accel.mapping[glyph_info.glyph_id]; found {
-			glyph_info.glyph_id = subst_glyph
-			glyph_info.flags += {.Substituted}
-		}
-	}
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Apply accelerated ligature substitution
-apply_accelerated_ligature_subst :: proc(
-	buffer: ^Shaping_Buffer,
-	accel: Ligature_Subst_Accelerator,
-	lookup_flags: ttf.Lookup_Flags,
-) {
-	// Process each glyph as a potential ligature start
-	pos := 0
-	for pos < len(buffer.glyphs) {
-		first_glyph := &buffer.glyphs[pos]
-
-		// Skip if this glyph should be ignored based on lookup flags
-		if should_skip_glyph(first_glyph.category, lookup_flags, buffer.skip_mask) {
-			pos += 1
-			continue
-		}
-
-		// Quick check if this glyph can start a ligature
-		if !accel.starts_ligature[first_glyph.glyph_id] {
-			pos += 1
-			continue
-		}
-
-		// Try to find a ligature match for this glyph
-		ligature_found := false
-
-		if sequences, has_sequences := accel.ligature_map[first_glyph.glyph_id]; has_sequences {
-			for sequence in sequences {
-				if match_ligature_sequence(buffer, pos, sequence.components, lookup_flags) {
-					apply_ligature_substitution(
-						buffer,
-						pos,
-						sequence.ligature,
-						sequence.components,
-					)
-					ligature_found = true
-					break
-				}
-			}
-		}
-
-		// If we found a ligature, we don't advance pos since the new ligature
-		// might participate in another ligature in the next iteration
-		if !ligature_found {
-			pos += 1
-		}
-	}
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Apply accelerated chained context substitution
-apply_accelerated_chained_context_subst :: proc(
+// Format 8
+accelerate_reverse_chained_subtable :: proc(
 	gsub: ^ttf.GSUB_Table,
-	buffer: ^Shaping_Buffer,
-	accel: Chained_Context_Accelerator,
-	lookup_flags: ttf.Lookup_Flags,
+	accel: ^GSUB_Accelerator,
+	lookup_idx: u16,
+	subtable_offset: uint,
+	format: u16,
 ) {
-	switch accel.format {
-	case 3:
-		apply_accelerated_chained_context_format3(gsub, buffer, accel, lookup_flags)
-	case:
-		unimplemented()
-	}
-}
-
-// Apply accelerated chained context format 3
-apply_accelerated_chained_context_format3 :: proc(
-	gsub: ^ttf.GSUB_Table,
-	buffer: ^Shaping_Buffer,
-	accel: Chained_Context_Accelerator,
-	lookup_flags: ttf.Lookup_Flags,
-) {
-	if len(accel.input_coverages) == 0 {return}
-
-	// Save original cursor position
-	original_cursor := buffer.cursor
-
-	// Process each potential context start position
-	for pos := 0; pos <= len(buffer.glyphs) - len(accel.input_coverages); pos += 1 {
-		// Check input sequence
-		input_matched := true
-		for i := 0; i < len(accel.input_coverages); i += 1 {
-			glyph_pos := pos + i
-
-			if glyph_pos >= len(buffer.glyphs) {
-				input_matched = false
-				break
-			}
-
-			glyph := buffer.glyphs[glyph_pos]
-
-			if should_skip_glyph(glyph.category, lookup_flags, buffer.skip_mask) {
-				input_matched = false
-				break
-			}
-
-			if !is_glyph_in_coverage(accel.input_coverages[i], glyph.glyph_id) {
-				input_matched = false
-				break
-			}
-		}
-
-		if !input_matched {continue}
-
-		// Check backtrack sequence
-		if len(accel.backtrack_coverages) > 0 {
-			backtrack_matched := true
-
-			for i := 0; i < len(accel.backtrack_coverages); i += 1 {
-				backtrack_pos := pos - 1 - i
-
-				if backtrack_pos < 0 {
-					backtrack_matched = false
-					break
-				}
-
-				glyph := buffer.glyphs[backtrack_pos]
-
-				// Skip if this glyph should be ignored
-				if should_skip_glyph(glyph.category, lookup_flags, buffer.skip_mask) {
-					i -= 1 // Try again with previous position
-					continue
-				}
-
-				// Check if glyph is in coverage
-				if !is_glyph_in_coverage(accel.backtrack_coverages[i], glyph.glyph_id) {
-					backtrack_matched = false
-					break
-				}
-			}
-
-			if !backtrack_matched {continue}
-		}
-
-		// Check lookahead sequence
-		if len(accel.lookahead_coverages) > 0 {
-			lookahead_matched := true
-			lookahead_pos := pos + len(accel.input_coverages)
-
-			for i := 0; i < len(accel.lookahead_coverages); i += 1 {
-				if lookahead_pos >= len(buffer.glyphs) {
-					lookahead_matched = false
-					break
-				}
-
-				glyph := buffer.glyphs[lookahead_pos]
-
-				// Skip if this glyph should be ignored
-				if should_skip_glyph(glyph.category, lookup_flags, buffer.skip_mask) {
-					lookahead_pos += 1
-					i -= 1 // Try again
-					continue
-				}
-
-				// Check if glyph is in coverage
-				if !is_glyph_in_coverage(accel.lookahead_coverages[i], glyph.glyph_id) {
-					lookahead_matched = false
-					break
-				}
-
-				lookahead_pos += 1
-			}
-
-			if !lookahead_matched {
-				continue
-			}
-		}
-
-		// If we get here, all sequences matched
-		// Apply substitutions
-		buffer.cursor = pos // Set cursor to the start of the match
-
-		for subst in accel.substitutions {
-			// Calculate the position to apply substitution
-			if int(subst.sequence_index) >= len(accel.input_coverages) {continue} 	// Invalid sequence index
-
-			// Calculate absolute position accounting for ignored glyphs
-			target_pos := pos
-			count := subst.sequence_index
-
-			for curr_pos := pos; curr_pos < len(buffer.glyphs) && count > 0; curr_pos += 1 {
-				if !should_skip_glyph(
-					buffer.glyphs[curr_pos].category,
-					lookup_flags,
-					buffer.skip_mask,
-				) {
-					count -= 1
-				}
-				target_pos = curr_pos
-			}
-
-			if count > 0 || target_pos >= len(buffer.glyphs) {continue} 	// Couldn't find target position
-
-			// Apply the nested lookup
-			lookup_type, nested_flags, _, lookup_ok := ttf.get_lookup_info(
-				gsub,
-				subst.lookup_list_index,
-			)
-
-			if !lookup_ok {continue}
-
-			// Save cursor and flags
-			saved_cursor := buffer.cursor
-			saved_flags := buffer.flags
-
-			// Set cursor to target position and apply flags for this nested lookup
-			buffer.cursor = target_pos
-			buffer.flags = nested_flags
-
-			// Apply the nested lookup
-			apply_lookup(gsub, subst.lookup_list_index, lookup_type, nested_flags, buffer)
-
-			// Restore cursor and flags
-			buffer.cursor = saved_cursor
-			buffer.flags = saved_flags
-		}
+	if true do unimplemented()
+	// Reverse chained substitution only has format 1
+	if format != 1 {
+		fmt.printf("Unsupported ReverseChained subtable format: %d\n", format)
+		return
 	}
 
-	// Restore original cursor position
-	buffer.cursor = original_cursor
+	// Initialize Reverse Chained Accelerator if not exists
+	if _, has_accel := accel.reverse_chained_subst[lookup_idx]; !has_accel {
+		reverse_accel := Reverse_Chained_Accelerator {
+			format           = format,
+			substitution_map = make(map[Glyph]Glyph),
+		}
+
+		accel.reverse_chained_subst[lookup_idx] = reverse_accel
+	}
+
+	// Get coverage
+	coverage_offset := ttf.read_u16(gsub.raw_data, subtable_offset + 2)
+	abs_coverage_offset := subtable_offset + uint(coverage_offset)
+
+	// Create coverage digest
+	if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
+		digest := build_coverage_digest(gsub, abs_coverage_offset)
+		accel.coverage_digest[abs_coverage_offset] = digest
+
+		// Store in the accelerator
+		subst := &accel.reverse_chained_subst[lookup_idx]
+		subst.coverage = digest
+	}
+
+	// TODO: Process backtrack and lookahead coverages
+	// TODO: Build substitution map
 }

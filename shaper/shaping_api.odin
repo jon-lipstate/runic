@@ -75,7 +75,6 @@ shape_with_cache :: proc(
 	reserve(&buffer.glyphs, len(buffer.runes))
 	map_runes_to_glyphs(font, buffer, cache)
 
-
 	// If cache couldn't be created, fall back to basic shaping
 	if cache == nil {
 		return shape_text_basic_with_buffer(font, buffer)
@@ -93,9 +92,7 @@ shape_with_cache :: proc(
 		}
 	}
 
-	// for gi in buffer.glyphs {
-	// 	fmt.printf("%v -> %v \n", buffer.runes[gi.cluster], gi.glyph_id)
-	// }
+	// for gi in buffer.glyphs {fmt.printf("%v -> %v \n", buffer.runes[gi.cluster], gi.glyph_id)}
 
 	// Allocate and initialize glyph positions
 	resize(&buffer.positions, len(buffer.glyphs))

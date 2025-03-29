@@ -15,7 +15,7 @@ get_default_features :: proc(script: Script_Tag) -> Feature_Set {
 		return Latin_Default_Features
 	case .arab, .aran:
 		return Arabic_Default_Features
-	case .deva:
+	case .deva, .dev2:
 		return Devanagari_Default_Features
 	// Add more scripts as needed
 	case:
@@ -39,7 +39,7 @@ get_script_feature_stages :: proc(
 		return Latin_Feature_Stages, Latin_Required_Stages
 	case .arab, .aran:
 		return Arabic_Feature_Stages, Arabic_Required_Stages
-	case .deva:
+	case .deva, .dev2:
 		return Devanagari_Feature_Stages, Devanagari_Required_Stages
 	// TODO: other script sets
 	case:

@@ -102,10 +102,10 @@ build_cmap_accelerator :: proc(font: ^Font, cache: ^Shaping_Cache, script: Scrip
 		unicode_range_start = 0x0590
 		unicode_range_end = 0x05FF
 
-	case .deva, .beng, .guru, .gujr, .orya, .taml, .telu, .knda, .mlym, .sinh:
+	case .deva, .dev2, .beng, .guru, .gujr, .orya, .taml, .telu, .knda, .mlym, .sinh:
 		// Indic scripts - pick appropriate range
 		#partial switch script { 	// TODO: rest of scripts
-		case .deva:
+		case .deva, .dev2:
 			unicode_range_start, unicode_range_end = 0x0900, 0x097F
 		case .beng:
 			unicode_range_start, unicode_range_end = 0x0980, 0x09FF

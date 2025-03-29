@@ -57,7 +57,7 @@ main :: proc() {
 	spall_ctx = spall.context_create("rune.spall")
 	defer spall.context_destroy(&spall_ctx)
 
-	buffer_backing := make([]u8, spall.BUFFER_DEFAULT_SIZE * 64)
+	buffer_backing := make([]u8, spall.BUFFER_DEFAULT_SIZE * 128)
 	defer delete(buffer_backing)
 
 	spall_buffer = spall.buffer_create(buffer_backing, u32(sync.current_thread_id()))
@@ -70,7 +70,7 @@ main :: proc() {
 	// fmt.printf("Memory After create_engine %v KiB\n", track.total_memory_allocated / 1024)
 
 	// Load and register a font
-	font_path := "./arial.ttf"
+	font_path := "./segoeui.ttf"
 	font, err := ttf.load_font(font_path)
 	if err != .None {
 		fmt.eprintln("Error loading font:", err)
@@ -118,10 +118,8 @@ test_specific_glyphs :: proc(font: ^ttf.Font) {
 
 test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font: ^ttf.Font) {
 	// single sub ؛ arabic semi colon
-	test_text := "ہ"
-	//test_text := "Áffinity"
-	xtest_text := `Lorem Ipsum Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aenean at ultricies lorem. Nullam eu libero ut magna faucibus volutpat iaculis id nulla. Aliquam tempor iaculis orci non molestie. Nam dignissim mi sit amet semper bibendum. Donec euismod orci non risus vestibulum viverra. Nulla malesuada mi id nunc aliquam pharetra a et risus. Proin pulvinar, enim ut dapibus euismod, diam nulla pulvinar justo, in porta ex lectus quis massa. Nam enim neque, sagittis ac placerat condimentum, mollis vel ante. Nullam ornare lacus ut libero scelerisque, eget efficitur ex sagittis. Integer vitae elit at nulla convallis hendrerit.Vivamus sit amet molestie erat.Nulla fringilla consequat magna id placerat.Proin luctus ultrices nulla eu aliquet.Curabitur iaculis lobortis massa, nec vehicula sem.Maecenas ultrices dolor ante, eget ultricies urna fringilla ullamcorper.Praesent non consectetur lectus, sit amet cursus risus.Sed cursus, turpis non placerat molestie, nisl dui ornare felis, ac faucibus ligula ante et nisl.Vivamus sollicitudin ultricies orci, at auctor libero.Nunc porta, leo sit amet feugiat ultricies, neque sapien ultricies leo, gravida elementum lorem lacus non magna.Sed accumsan mi risus, quis lobortis lorem dignissim in.In hac habitasse platea dictumst.Morbi dui sem, pellentesque a massa ut, interdum vulputate ipsum.Phasellus magna mauris, mattis sit amet lacus vitae, auctor molestie dui.Sed sed enim vestibulum neque finibus auctor imperdiet eget dolor.Donec eu justo sapien.Ut varius, leo at placerat rutrum, nisl arcu dignissim ex, sed consequat ipsum sapien nec mi.Nunc ornare ex urna, aliquet pellentesque felis rhoncus ut.Donec ultrices porttitor dui.Proin pulvinar nec tortor non fringilla.Cras consectetur libero ut purus gravida, in egestas orci volutpat.Nulla lacinia non dui et tempus.Phasellus maximus, metus quis pulvinar dapibus, nunc ex blandit felis, non ultricies magna nisl vel arcu.Nunc feugiat sed ipsum non dignissim.Fusce facilisis congue mi.Curabitur in placerat quam, eget ultrices purus.Integer eget nisl turpis.Morbi in orci non elit cursus interdum in sed nulla.Integer dignissim, nulla ut eleifend accumsan, nunc massa egestas justo, ac vulputate risus ante nec quam.Integer molestie ligula et ante finibus, a facilisis diam faucibus.Nulla ut lacus arcu.Nullam placerat maximus feugiat.Duis tempor ut tellus id tempus.Duis ut aliquam nunc, vitae posuere nulla.Nulla in urna vel leo dapibus facilisis.Cras luctus augue vel dapibus hendrerit.Praesent semper convallis ex, id consectetur neque vehicula in.Interdum et malesuada fames ac ante ipsum primis in faucibus.Aliquam nec felis a magna pellentesque faucibus sed eu enim.Duis in eros nisi.Nulla tempor vestibulum dolor, et sollicitudin nisl scelerisque nec.Praesent ullamcorper augue purus, faucibus volutpat eros facilisis eu.Integer quis purus molestie, tincidunt ipsum venenatis, cursus lorem.Morbi commodo feugiat elit eget facilisis.Suspendisse laoreet erat risus, sit amet maximus magna aliquam nec.Suspendisse at eleifend arcu.Nam pulvinar euismod lobortis.Suspendisse dapibus odio eu sem aliquam tincidunt.Fusce ultricies vehicula bibendum.Morbi gravida metus sit amet pellentesque hendrerit.Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos.Integer dictum luctus sapien, vel sodales metus mattis at.Donec nec dignissim justo.Sed non semper ante, eget finibus velit.Nam ut ultrices libero.Quisque aliquet magna dui, id sollicitudin augue luctus eu.`
-
+	//test_text := "مرحباً"
+	test_text := "Áffinity"
 
 	features := shaper.create_feature_set(
 		.ccmp, // Glyph composition/decomposition
@@ -130,11 +128,6 @@ test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font:
 		.dlig, // discretionary ligatures
 		.kern, // Kerning
 		.mark, // Mark positioning
-		.hlig,
-		.salt,
-		.Case,
-		.rlig,
-		.ccmp,
 	)
 
 	size_px := f32(72)
@@ -143,7 +136,7 @@ test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font:
 		engine,
 		font_id,
 		test_text,
-		.arab,
+		.latn,
 		.dflt,
 		features,
 	)
@@ -161,8 +154,11 @@ test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font:
 	// fmt.println("Glyph count:", len(buffer.glyphs))
 
 	// fmt.println("\nRendering text...")
-	render_text(font, buffer, size_px, "text.bmp")
+	// render_text(font, buffer, size_px, "text.bmp")
 }
+
+xtest_text := `Lorem Ipsum Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aenean at ultricies lorem. Nullam eu libero ut magna faucibus volutpat iaculis id nulla. Aliquam tempor iaculis orci non molestie. Nam dignissim mi sit amet semper bibendum. Donec euismod orci non risus vestibulum viverra. Nulla malesuada mi id nunc aliquam pharetra a et risus. Proin pulvinar, enim ut dapibus euismod, diam nulla pulvinar justo, in porta ex lectus quis massa. Nam enim neque, sagittis ac placerat condimentum, mollis vel ante. Nullam ornare lacus ut libero scelerisque, eget efficitur ex sagittis. Integer vitae elit at nulla convallis hendrerit.Vivamus sit amet molestie erat.Nulla fringilla consequat magna id placerat.Proin luctus ultrices nulla eu aliquet.Curabitur iaculis lobortis massa, nec vehicula sem.Maecenas ultrices dolor ante, eget ultricies urna fringilla ullamcorper.Praesent non consectetur lectus, sit amet cursus risus.Sed cursus, turpis non placerat molestie, nisl dui ornare felis, ac faucibus ligula ante et nisl.Vivamus sollicitudin ultricies orci, at auctor libero.Nunc porta, leo sit amet feugiat ultricies, neque sapien ultricies leo, gravida elementum lorem lacus non magna.Sed accumsan mi risus, quis lobortis lorem dignissim in.In hac habitasse platea dictumst.Morbi dui sem, pellentesque a massa ut, interdum vulputate ipsum.Phasellus magna mauris, mattis sit amet lacus vitae, auctor molestie dui.Sed sed enim vestibulum neque finibus auctor imperdiet eget dolor.Donec eu justo sapien.Ut varius, leo at placerat rutrum, nisl arcu dignissim ex, sed consequat ipsum sapien nec mi.Nunc ornare ex urna, aliquet pellentesque felis rhoncus ut.Donec ultrices porttitor dui.Proin pulvinar nec tortor non fringilla.Cras consectetur libero ut purus gravida, in egestas orci volutpat.Nulla lacinia non dui et tempus.Phasellus maximus, metus quis pulvinar dapibus, nunc ex blandit felis, non ultricies magna nisl vel arcu.Nunc feugiat sed ipsum non dignissim.Fusce facilisis congue mi.Curabitur in placerat quam, eget ultrices purus.Integer eget nisl turpis.Morbi in orci non elit cursus interdum in sed nulla.Integer dignissim, nulla ut eleifend accumsan, nunc massa egestas justo, ac vulputate risus ante nec quam.Integer molestie ligula et ante finibus, a facilisis diam faucibus.Nulla ut lacus arcu.Nullam placerat maximus feugiat.Duis tempor ut tellus id tempus.Duis ut aliquam nunc, vitae posuere nulla.Nulla in urna vel leo dapibus facilisis.Cras luctus augue vel dapibus hendrerit.Praesent semper convallis ex, id consectetur neque vehicula in.Interdum et malesuada fames ac ante ipsum primis in faucibus.Aliquam nec felis a magna pellentesque faucibus sed eu enim.Duis in eros nisi.Nulla tempor vestibulum dolor, et sollicitudin nisl scelerisque nec.Praesent ullamcorper augue purus, faucibus volutpat eros facilisis eu.Integer quis purus molestie, tincidunt ipsum venenatis, cursus lorem.Morbi commodo feugiat elit eget facilisis.Suspendisse laoreet erat risus, sit amet maximus magna aliquam nec.Suspendisse at eleifend arcu.Nam pulvinar euismod lobortis.Suspendisse dapibus odio eu sem aliquam tincidunt.Fusce ultricies vehicula bibendum.Morbi gravida metus sit amet pellentesque hendrerit.Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos.Integer dictum luctus sapien, vel sodales metus mattis at.Donec nec dignissim justo.Sed non semper ante, eget finibus velit.Nam ut ultrices libero.Quisque aliquet magna dui, id sollicitudin augue luctus eu.`
+
 
 render_text :: proc(
 	font: ^ttf.Font,
