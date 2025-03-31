@@ -1,7 +1,14 @@
 package ttf
 
+import runic_ts "../tmp_shared"
+import "../ttf2"
 
-Glyph :: distinct u16
+import "core:testing"
+import "core:reflect"
+import "core:fmt"
+
+
+Glyph :: runic_ts.Glyph
 Table_Tag :: distinct string // [4]u8 into string
 
 Font :: struct {
@@ -17,11 +24,18 @@ Font :: struct {
 	_tables:      []Table_Record,
 	_offsets:     Offset_Table,
 	_cache:       map[Table_Tag]Table_Entry,
+
+	_v2: ^ttf2.Font,
 }
 
 Table_Entry :: struct {
 	data:    rawptr,
 	destroy: proc(ref: rawptr),
+}
+
+Table_Entry_2 :: struct {
+	data: []byte,
+	valid: bool,
 }
 
 Font_Error :: enum {
@@ -32,6 +46,7 @@ Font_Error :: enum {
 	Invalid_Table_Format,
 	Missing_Required_Table,
 	Invalid_Table_Offset,
+	Unknown,
 }
 
 Font_Feature :: enum {
@@ -75,11 +90,7 @@ Table_Record :: struct {
 	length:   u32,
 }
 
-Bounding_Box :: struct {
-	min: [2]i16,
-	max: [2]i16,
-}
-
+Bounding_Box :: runic_ts.Bounding_Box
 
 Destroy_Table :: #type proc(data: rawptr)
 

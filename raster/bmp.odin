@@ -336,10 +336,23 @@ rasterize_glyph :: proc(
 	bitmap: ^Bitmap,
 	size_px: f32,
 ) -> bool {
+	if int(glyph_id) >= len(font._v2.glyphs) {
+		return false
+	}
 	glyf, has_glyf := ttf.get_table(font, "glyf", ttf.load_glyf_table, ttf.Glyf_Table)
 	if !has_glyf {return false}
 	// Get the glyph outline
-	extracted, ok := ttf.extract_glyph(glyf, glyph_id)
+	extracted: ttf.Extracted_Glyph
+	ok: bool
+	if font._v2.glyphs[glyph_id] == nil {
+		extracted, ok = ttf.extract_glyph(glyf, glyph_id, font._v2.allocator)
+		if ok {
+			font._v2.glyphs[glyph_id] = new_clone(extracted, font._v2.allocator)
+		}
+	} else {
+		extracted = font._v2.glyphs[glyph_id]^
+		ok = true
+	}
 	if !ok {
 		fmt.println("failed to extract glyph")
 	}

@@ -2,9 +2,12 @@ package runic_ttf
 
 import "core:os"
 import "core:mem"
+import "core:slice"
 import "core:log"
 import "base:runtime"
 import "base:intrinsics"
+
+import runic_ts "../tmp_shared"
 
 Ttf_ShortFrac :: i16be
 Ttf_Fixed :: i32be
@@ -144,10 +147,14 @@ Font :: struct {
 	has_tables: Table_Tags,
 	tables: [Table_Tag]Table_Blob,
 
+	// NOTE(lucas): these are dynamically created just in time as the user requests glyphs
+	glyphs: []^runic_ts.Extracted_Glyph,
+
+	allocator: runtime.Allocator,
 	arena: runtime.Arena,
 }
 
-Offset_Table :: struct #packed {
+Table_Offset :: struct #packed {
 	scalar_type: Ttf_u32,
 	num_tables: Ttf_u16,
 	search_range: Ttf_u16,
@@ -167,6 +174,7 @@ Font_Make_Options :: struct {
 	skip_check_sum: bool,
 	allow_duplicate_tables: bool,
 	arena_size: uint,
+	clone_data: bool,
 }
 
 font_make_from_data :: proc(data: []byte, allocator: runtime.Allocator, options: Font_Make_Options = {}) -> (^Font, bool) {
@@ -192,12 +200,18 @@ font_make_from_data :: proc(data: []byte, allocator: runtime.Allocator, options:
 		return {}, false
 	}
 	font.arena = arena
+	font.allocator = allocator
+
+	data := data
+	if options.clone_data {
+		data = slice.clone(data, allocator)
+	}
 	font.data = data
 
 	// NOTE(lucas): ingest all tables
 	{
 		reader := Reader { &ctx, data, 0 }
-		offset_table, _ := read_t_ptr(Offset_Table, &reader)
+		offset_table, _ := read_t_ptr(Table_Offset, &reader)
 		table_directories, _ := read_t_slice(Table_Directory, &reader, i64(offset_table.num_tables))
 		for table in table_directories {
 			tag := ttf_u32_to_tag(table.tag)
@@ -206,7 +220,7 @@ font_make_from_data :: proc(data: []byte, allocator: runtime.Allocator, options:
 			}
 			if ! options.allow_duplicate_tables && tag in font.has_tables {
 				ctx.ok = false
-				log.infof("[Ttf parser] found duplicate table '%v'", tag)
+				log.errorf("[Ttf parser] found duplicate table '%v'", tag)
 			} else {
 				table_data, table_ok := get_table_from_directory(&ctx, i64(table.offset), i64(table.length), data)
 				font.has_tables += { tag }
@@ -229,16 +243,24 @@ font_make_from_data :: proc(data: []byte, allocator: runtime.Allocator, options:
 			if tag == .head {
 				checksum := table_check_sum(data)
 				if 0xB1B0AFBA - checksum != 0 {
-					log.infof("[Ttf parser] table '%v' has a bad checksum", tag)
+					log.errorf("[Ttf parser] table '%v' has a bad checksum", tag)
 					ctx.ok = false
 				}
 			} else {
 				if table_check_sum(parsed_info.data) != parsed_info.check_sum {
-					log.infof("[Ttf parser] table '%v' has a bad checksum", tag)
+					log.errorf("[Ttf parser] table '%v' has a bad checksum", tag)
 					ctx.ok = false
 				}
 			}
 		}
+	}
+
+	// NOTE(lucas): parse necessary tables
+	{
+		head, _ := parse_head_table(&ctx, font.tables[.head])
+		maxp, _ := parse_maxp_table(&ctx, font.tables[.maxp], allocator)
+		num_glyphs := u16(maxp.num_glyphs)
+		font.glyphs = make([]^runic_ts.Extracted_Glyph, num_glyphs, allocator)
 	}
 
 	ok = ctx.ok

@@ -66,7 +66,8 @@ when ODIN_OS == .Windows {
 			value := rand.int_max(len(data))
 			data[value] += 1
 
-			context.logger.lowest_level = .Warning
+			// NOTE(lucas): we expect errors to occur but don't log them since they will fail test
+			context.logger.lowest_level = .Fatal
 			_, font_ok := font_make_from_data(data, context.allocator)
 			testing.expect(t, ! font_ok)
 		}
@@ -85,6 +86,8 @@ when ODIN_OS == .Windows {
 			value := rand.int_max(len(data))
 			trunc_data := data[:value]
 
+			// NOTE(lucas): we expect errors to occur but don't log them since they will fail test
+			context.logger.lowest_level = .Fatal
 			_, font_ok := font_make_from_data(trunc_data, context.allocator, { skip_check_sum = true })
 			testing.expect(t, ! font_ok)
 		}

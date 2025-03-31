@@ -5,13 +5,25 @@ import "core:os"
 import "core:slice"
 import "core:strings"
 
-load_font :: proc(filepath: string) -> (font: Font, err: Font_Error) {
-	font.filepath = filepath
+import "../ttf2"
 
+load_font :: proc {
+	load_font_from_path,
+	load_font_from_data,
+}
+
+load_font_from_path :: proc(filepath: string) -> (Font, Font_Error) {
 	data, ok := os.read_entire_file(filepath)
 	if !ok {
-		return font, .File_Not_Found
+		return {}, .File_Not_Found
 	}
+	font, err := load_font_from_data(data)
+	font.filepath = filepath
+	return font, err
+}
+
+
+load_font_from_data :: proc(data: []byte) -> (font: Font, err: Font_Error) {
 	font._data = data
 	font._cache = make(map[Table_Tag]Table_Entry)
 
@@ -20,6 +32,12 @@ load_font :: proc(filepath: string) -> (font: Font, err: Font_Error) {
 	extract_table_tags(&font)
 	detect_features(&font)
 	extract_basic_metadata(&font)
+
+	font_ok: bool
+	font._v2, font_ok = ttf2.font_make_from_data(data, context.allocator)
+	if ! font_ok {
+		return {}, .Unknown
+	}
 
 	return font, .None
 }
@@ -34,6 +52,7 @@ destroy_font :: proc(font: ^Font) {
 	delete(font._data)
 	delete(font._tables)
 	delete(font.table_tags)
+	ttf2.font_delete(font._v2)
 }
 
 // sfnt header
