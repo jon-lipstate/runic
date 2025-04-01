@@ -27,17 +27,17 @@ load_font_from_data :: proc(data: []byte) -> (font: Font, err: Font_Error) {
 	font._data = data
 	font._cache = make(map[Table_Tag]Table_Entry)
 
-	parse_offset_table(&font) or_return
-	parse_table_directory(&font) or_return
-	extract_table_tags(&font)
-	detect_features(&font)
-	extract_basic_metadata(&font)
-
 	font_ok: bool
 	font._v2, font_ok = ttf2.font_make_from_data(data, context.allocator)
 	if ! font_ok {
 		return {}, .Unknown
 	}
+
+	parse_offset_table(&font) or_return
+	parse_table_directory(&font) or_return
+	extract_table_tags(&font)
+	detect_features(&font)
+	extract_basic_metadata(&font)
 
 	return font, .None
 }

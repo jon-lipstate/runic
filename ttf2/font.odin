@@ -8,6 +8,7 @@ import "base:runtime"
 import "base:intrinsics"
 
 import runic_ts "../tmp_shared"
+import "../memory"
 
 Ttf_ShortFrac :: i16be
 Ttf_Fixed :: i32be
@@ -150,8 +151,20 @@ Font :: struct {
 	// NOTE(lucas): these are dynamically created just in time as the user requests glyphs
 	glyphs: []^runic_ts.Extracted_Glyph,
 
+	units_per_em: f32,
+	hinting_data: Font_Hinting_Data,
+
 	allocator: runtime.Allocator,
 	arena: runtime.Arena,
+}
+
+Font_Hinting_Data :: struct {
+	enabled: bool,
+	stack_size: i32,
+	storage_size: i32,
+	zone_0_size: i32,
+	ran_font_program: bool,
+	shared_instructions: [][]byte,
 }
 
 Table_Offset :: struct #packed {
@@ -173,34 +186,38 @@ Font_Make_Options :: struct {
 	debug: bool,
 	skip_check_sum: bool,
 	allow_duplicate_tables: bool,
-	arena_size: uint,
+	arena_size: int,
 	clone_data: bool,
 }
 
 font_make_from_data :: proc(data: []byte, allocator: runtime.Allocator, options: Font_Make_Options = {}) -> (^Font, bool) {
 	context.allocator = mem.panic_allocator()
 	allocator := allocator
-	arena: runtime.Arena
 	// NOTE(lucas): we multiply the file size by 3 as an estimate of the total amount of memory used
 	// during parsing, once everything is up and running we can tweak this.
-	arena_err := runtime.arena_init(&arena, options.arena_size == 0 ? len(data) * 3 : options.arena_size, allocator)
-	if arena_err != nil {
-		return {}, false
-	}
+	font: ^Font
+	{
+		arena: runtime.Arena
+		arena_err := runtime.arena_init(&arena, options.arena_size <= 0 ? len(data) * 3 : uint(options.arena_size), allocator)
+		if arena_err != nil {
+			return {}, false
+		}
 
-	allocator = runtime.arena_allocator(&arena)
+		new_font, font_err := new(Font, allocator)
+		if font_err != nil {
+			return {}, false
+		}
+		font = new_font
+		font.arena = arena
+	}
+	allocator = runtime.arena_allocator(&font.arena)
+	font.allocator = allocator
+
 	ctx: Read_Context = { ok = true }
 	ok := false
 	defer if ! ok {
-		runtime.arena_destroy(&arena)
+		runtime.arena_destroy(&font.arena)
 	}
-
-	font, font_err := new(Font, allocator)
-	if font_err != nil {
-		return {}, false
-	}
-	font.arena = arena
-	font.allocator = allocator
 
 	data := data
 	if options.clone_data {
@@ -256,11 +273,28 @@ font_make_from_data :: proc(data: []byte, allocator: runtime.Allocator, options:
 	}
 
 	// NOTE(lucas): parse necessary tables
+	head: ^Table_Head
+	maxp: ^Table_Maxp
 	{
-		head, _ := parse_head_table(&ctx, font.tables[.head])
-		maxp, _ := parse_maxp_table(&ctx, font.tables[.maxp], allocator)
+		head, _ = parse_head_table(&ctx, font.tables[.head])
+		maxp, _ = parse_maxp_table(&ctx, font.tables[.maxp], allocator)
 		num_glyphs := u16(maxp.num_glyphs)
 		font.glyphs = make([]^runic_ts.Extracted_Glyph, num_glyphs, allocator)
+		font.units_per_em = f32(u16(head.units_per_em))
+	}
+
+	{
+		// NOTE(lucas): parse hinting information, the font program will be ran
+		// by the first hinter program
+		hinting_tables := Table_Tags { .fpgm, .cvt, .prep, .maxp }
+		has_hinting := hinting_tables - font.has_tables == {}
+		if has_hinting {
+			font.hinting_data.enabled = true
+			font.hinting_data.stack_size = i32(maxp.max_stack_elements) + 32
+			font.hinting_data.storage_size = i32(maxp.max_storage)
+			font.hinting_data.zone_0_size = i32(maxp.max_twilight_points)
+			font.hinting_data.shared_instructions = make([][]byte, maxp.max_function_defs, allocator)
+		}
 	}
 
 	ok = ctx.ok
@@ -269,8 +303,8 @@ font_make_from_data :: proc(data: []byte, allocator: runtime.Allocator, options:
 
 font_delete :: proc(font: ^Font) {
 	if font != nil {
-		// NOTE(lucas): since font holds the arena struct we need to copy it out here
-		// so we don't refer to deleted data when doing arena_destroy
+		// NOTE(lucas): copy out the arena so we don't go try accessing deleted memory
+		// as the arena will delete the font containing the arena
 		arena := font.arena
 		runtime.arena_destroy(&arena)
 	}

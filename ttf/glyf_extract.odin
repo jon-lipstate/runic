@@ -1,6 +1,7 @@
 package ttf
 
 import runic_ts "../tmp_shared"
+import "../memory"
 
 import "core:fmt"
 import "core:mem"
@@ -78,9 +79,8 @@ extract_simple_glyph :: proc(
 	on_curve := make([]bool, point_count, allocator)
 	defer if !ok {delete(on_curve)}
 
-	// FIXME: use scratch space! 
-	flags := make([]Simple_Glyph_Flags, point_count, allocator)
-	defer delete(flags)
+	scratch := memory.arena_scratch({})
+	flags := make([]Simple_Glyph_Flags, point_count, scratch)
 
 	// Calculate offsets for parsing
 	end_points_offset := uint(size_of(OpenType_Glyf_Entry_Header))
