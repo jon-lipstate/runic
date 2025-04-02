@@ -148,14 +148,17 @@ test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font:
 		return
 	}
 
-	fmt.println("\nShaped text:", test_text, len(buffer.glyphs))
+	// fmt.println("\nShaped text:", test_text, len(buffer.glyphs))
 	for gi, i in buffer.glyphs {
-		fmt.printf(
-			"rune: %v, codepoint: U+%X\n",
-			buffer.runes[gi.cluster],
-			transmute(u32)buffer.runes[gi.cluster],
-		)
-		fmt.println(gi)
+		if gi.glyph_id == 0 && transmute(u32)buffer.runes[gi.cluster] != 10 {
+			// fmt.printf(
+			// 	"rune: %v, codepoint: %v\n",
+			// 	buffer.runes[gi.cluster],
+			// 	transmute(u32)buffer.runes[gi.cluster],
+			// )
+			fmt.println(transmute(u32)buffer.runes[gi.cluster], gi)
+		}
+
 	}
 	// fmt.println("Glyph count:", len(buffer.glyphs))
 

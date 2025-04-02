@@ -2,10 +2,11 @@ package shaper
 
 import ttf "../ttf"
 import "base:runtime"
+import "core:fmt"
 import "core:unicode/utf8"
 
 CMAP_Accelerator :: struct {
-	ascii_direct:  [128]Glyph,
+	ascii_direct:  [256]Glyph,
 	sparse_map:    map[rune]Glyph,
 	// For variation selectors
 	variation_map: map[rune]map[rune]Glyph, // base char -> variation selector -> glyph
@@ -29,9 +30,8 @@ get_glyph_accelerated :: proc(
 			}
 		}
 	}
-
 	// Fast path for ASCII
-	if codepoint < 128 {
+	if codepoint < 256 {
 		glyph := accel.ascii_direct[codepoint]
 		return glyph, glyph != 0
 	}
@@ -67,8 +67,7 @@ build_cmap_accelerator :: proc(font: ^Font, cache: ^Shaping_Cache, script: Scrip
 	assert(err2 == nil)
 	accel.variation_map = vmap
 
-	// Always fill ASCII for any script (ASCII is almost always present)
-	for codepoint: rune = 0; codepoint < 128; codepoint += 1 {
+	for codepoint: rune = 0; codepoint < 255; codepoint += 1 {
 		glyph, found := ttf.get_glyph_from_cmap(font, codepoint)
 		if found {
 			accel.ascii_direct[codepoint] = glyph

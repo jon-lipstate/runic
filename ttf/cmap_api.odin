@@ -1,5 +1,7 @@
 package ttf
 
+import "core:fmt"
+
 get_glyph_from_cmap :: proc(font: ^Font, codepoint: rune) -> (Glyph, bool) {
 	cmap_table, ok := get_table(font, "cmap", load_cmap_table, CMAP_Table)
 	if !ok {return 0, false}
@@ -94,8 +96,11 @@ get_glyph_from_subtable :: proc(
 	case .Byte_Encoding:
 		// Format 0 - only handles codepoints 0-255
 		if codepoint <= 0xFF {
+			fmt.println("Byte_Encoding")
 			f0 := subtable.data.(^Format0)
 			glyph_id := get_format0_glyph_id(data, f0, u8(codepoint))
+			// Debug: print values
+			fmt.printf("Format 0 lookup: codepoint %d -> glyph %d\n", codepoint, glyph_id)
 			return Glyph(glyph_id), glyph_id != 0
 		}
 
@@ -149,7 +154,6 @@ get_glyph_from_subtable :: proc(
 				}
 			}
 		}
-
 	case .Segment_Mapping:
 		// Format 4 - handles BMP unicode (0-65535)
 		if codepoint <= 0xFFFF {
@@ -158,48 +162,111 @@ get_glyph_from_subtable :: proc(
 
 			// Binary search through segments
 			left, right := uint(0), f4.segment_count - 1
+			found := false
+			mid: uint
+			start_code, end_code: u16
+			id_delta: i16
+			id_range_offset: u16
+
+			// Print full segment list for debugging very small character sets
+			if codepoint < 32 { 	// Only for control characters
+				// fmt.println("Full segment list for control character:", codepoint)
+				// for i: uint = 0; i < min(f4.segment_count, 20); i += 1 {
+				// 	sc, ec, _, _ := get_format4_segment(data, f4, i)
+				// 	fmt.printf("Segment %d: %d-%d\n", i, sc, ec)
+				// }
+			}
+
 			for left <= right {
-				mid := (left + right) / 2
-				start_code, end_code, id_delta, id_range_offset := get_format4_segment(
+				mid = (left + right) / 2
+				start_code, end_code, id_delta, id_range_offset = get_format4_segment(
 					data,
 					f4,
 					mid,
 				)
+
+				// fmt.printf(
+				// 	"Binary search: mid=%d, range=%d-%d, char=%d\n",
+				// 	mid,
+				// 	start_code,
+				// 	end_code,
+				// 	char_code,
+				// )
 
 				if char_code > end_code {
 					left = mid + 1
 				} else if char_code < start_code {
 					right = mid - 1
 				} else {
-					// Found the segment containing the character
-					if id_range_offset == 0 {
-						// Simple delta calculation
-						glyph_id := u16((int(char_code) + int(id_delta)) & 0xFFFF)
+					found = true
+					break
+				}
+				// Safety check: if mid was 0 and we need to go lower, exit
+				if mid == 0 && char_code < start_code {
+					break
+				}
+			}
+
+			// fmt.printf(
+			// 	"Search result: found=%v, last segment=%d-%d\n",
+			// 	found,
+			// 	start_code,
+			// 	end_code,
+			// )
+
+			if found {
+				// Found the segment containing the character
+				if id_range_offset == 0 {
+					// Simple delta calculation
+					glyph_id := u16((int(char_code) + int(id_delta)) & 0xFFFF)
+					// fmt.printf(
+					// 	"Simple delta calculation: char=%d + delta=%d = glyph=%d\n",
+					// 	char_code,
+					// 	id_delta,
+					// 	glyph_id,
+					// )
+					return Glyph(glyph_id), glyph_id != 0
+				} else {
+					// Complex calculation using glyph ID array
+					// Calculate the index within glyphIdArray
+					index_offset := (char_code - start_code)
+
+					// The location where idRangeOffset is stored
+					id_range_offset_loc := f4.id_range_offset_offset + mid * 2
+
+					// Calculate final address according to spec
+					glyph_id_address :=
+						id_range_offset_loc + uint(id_range_offset) + uint(index_offset * 2)
+
+					// fmt.printf(
+					// 	"Complex calculation: idRangeOffset=%d, index_offset=%d, final_addr=%d\n",
+					// 	id_range_offset,
+					// 	index_offset,
+					// 	glyph_id_address,
+					// )
+
+					if glyph_id_address < uint(len(data)) {
+						glyph_id := read_u16(data, glyph_id_address)
+
+						// If glyph_id is not 0, apply delta
+						if glyph_id != 0 {
+							glyph_id = u16((int(glyph_id) + int(id_delta)) & 0xFFFF)
+						}
+
+						// fmt.printf("Final glyph ID: %d\n", glyph_id)
 						return Glyph(glyph_id), glyph_id != 0
 					} else {
-						// Complex calculation using glyph ID array
-						char_offset := uint(char_code - start_code)
-
-						// In Format 4, id_range_offset is the offset from the idRangeOffset value itself
-						// This is one of the trickiest parts of the TrueType specification
-						id_range_pos := f4.id_range_offset_offset + mid * 2
-
-						// The formula is:
-						// glyphIndexAddress = idRangeOffset value + 
-						//                     (character code - segment's startCode) * 2 +
-						//                     address of idRangeOffset
-						glyph_id_address := id_range_pos + uint(id_range_offset) + char_offset * 2
-
-						if glyph_id_address < uint(len(data)) {
-							glyph_id := read_u16(data, glyph_id_address)
-							if glyph_id != 0 {
-								glyph_id = u16((int(glyph_id) + int(id_delta)) & 0xFFFF)
-								return Glyph(glyph_id), true
-							}
-						}
+						// fmt.println("Error: glyph_id_address out of bounds")
+						bounds_check(true)
 					}
-					return 0, false
 				}
+
+				// If we found the segment but couldn't get a valid glyph
+				return 0, false
+			} else {
+				// No segment contains this character
+				// fmt.printf("No segment found for character %d (0x%X)\n", char_code, char_code)
+				return 0, false
 			}
 		}
 
