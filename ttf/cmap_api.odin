@@ -169,13 +169,13 @@ get_glyph_from_subtable :: proc(
 			id_range_offset: u16
 
 			// Print full segment list for debugging very small character sets
-			if codepoint < 32 { 	// Only for control characters
-				// fmt.println("Full segment list for control character:", codepoint)
-				// for i: uint = 0; i < min(f4.segment_count, 20); i += 1 {
-				// 	sc, ec, _, _ := get_format4_segment(data, f4, i)
-				// 	fmt.printf("Segment %d: %d-%d\n", i, sc, ec)
-				// }
-			}
+			// if codepoint == 0xff {
+			// 	fmt.println("Full segment list for control character:", codepoint)
+			// 	for i: uint = 0; i < min(f4.segment_count, 20); i += 1 {
+			// 		sc, ec, _, _ := get_format4_segment(data, f4, i)
+			// 		fmt.printf("Segment %d: %d-%d\n", i, sc, ec)
+			// 	}
+			// }
 
 			for left <= right {
 				mid = (left + right) / 2

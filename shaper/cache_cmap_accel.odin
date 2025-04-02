@@ -67,7 +67,7 @@ build_cmap_accelerator :: proc(font: ^Font, cache: ^Shaping_Cache, script: Scrip
 	assert(err2 == nil)
 	accel.variation_map = vmap
 
-	for codepoint: rune = 0; codepoint < 255; codepoint += 1 {
+	for codepoint: rune = 0; codepoint < 256; codepoint += 1 {
 		glyph, found := ttf.get_glyph_from_cmap(font, codepoint)
 		if found {
 			accel.ascii_direct[codepoint] = glyph
