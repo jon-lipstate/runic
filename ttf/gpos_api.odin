@@ -548,7 +548,7 @@ get_adjustment_from_single_pos_format2 :: proc(
 // Check if a font has GPOS-based kerning
 has_gpos_kerning :: proc(font: ^Font) -> bool {
 	// First check if the font has a GPOS table
-	gpos, ok_gpos := get_table(font, "GPOS", load_gpos_table, GPOS_Table)
+	gpos, ok_gpos := get_table(font, .GPOS, load_gpos_table, GPOS_Table)
 	if !ok_gpos {return false}
 
 	// Look for pair positioning (type 2) lookups
@@ -582,7 +582,7 @@ get_combined_kerning :: proc(
 	found: bool,
 ) {
 	// Try GPOS first (more advanced, can have both horizontal and vertical adjustments)
-	gpos, ok_gpos := get_table(font, "GPOS", load_gpos_table, GPOS_Table)
+	gpos, ok_gpos := get_table(font, .GPOS, load_gpos_table, GPOS_Table)
 	if ok_gpos {
 		x_adjust, y_adjust, found = get_kerning_adjustment(gpos, left_glyph, right_glyph)
 
@@ -590,7 +590,7 @@ get_combined_kerning :: proc(
 	}
 
 	// Fall back to traditional kern table (horizontal only)
-	kern, ok_kern := get_table(font, "kern", load_kern_table, OpenType_Kern_Table)
+	kern, ok_kern := get_table(font, .kern, load_kern_table, OpenType_Kern_Table)
 	if ok_kern {
 		kern_adjust := get_kerning(kern, left_glyph, right_glyph)
 

@@ -1,11 +1,11 @@
 package ttf
 
 // #+feature custom-attribute @(api) TODO: propose to bill rather than build arg
+import "base:intrinsics"
 import "core:os"
+import "core:log"
 import "core:slice"
 import "core:strings"
-
-import "../ttf2"
 
 load_font :: proc {
 	load_font_from_path,
@@ -24,111 +24,89 @@ load_font_from_path :: proc(filepath: string) -> (Font, Font_Error) {
 
 
 load_font_from_data :: proc(data: []byte) -> (font: Font, err: Font_Error) {
-	font._data = data
-	font._cache = make(map[Table_Tag]Table_Entry)
+	ctx: Read_Context = { ok = true }
+	// NOTE(lucas): ingest all tables
+	{
+		reader := Reader { &ctx, data, 0 }
+		offset_table, _ := read_t_ptr(Offset_Table, &reader)
+		table_directories, _ := read_t_slice(Directory_Table, &reader, i64(offset_table.num_tables))
+		for table in table_directories {
+			tag := u32be_to_tag(table.tag)
+			if tag == .unknown {
+				continue
+			}
+			if tag in font._has_tables {
+				ctx.ok = false
+				log.errorf("[Ttf parser] found duplicate table '%v'", tag)
+			} else {
+				table_data, table_ok := get_table_from_directory(&ctx, i64(table.offset), i64(table.length), data)
+				font._has_tables += { tag }
+				font._tables[tag] = { tag, u32(table.check_sum), table_data, true, false, nil, nil }
+			}
+		}
+	}
+	// NOTE(lucas): verify features
+    for tag in font._has_tables {
+        if tag == .unknown {
+            continue
+        }
 
-	font_ok: bool
-	font._v2, font_ok = ttf2.font_make_from_data(data, context.allocator)
-	if ! font_ok {
+        parsed_info := font._tables[tag]
+        if ! parsed_info.valid {
+            ctx.ok = false
+        }
+		bad_checksum := false
+        if tag == .head {
+            checksum := table_check_sum(data)
+            bad_checksum = 0xB1B0AFBA - checksum != 0
+        } else {
+            bad_checksum = u32(table_check_sum(parsed_info.data)) != parsed_info.check_sum
+        }
+		if bad_checksum {
+			log.errorf("[Ttf parser] table %v has a bad checksum", tag)
+			ctx.ok = false
+		}
+    }
+
+	if ! ctx.ok {
 		return {}, .Unknown
 	}
 
-	parse_offset_table(&font) or_return
-	parse_table_directory(&font) or_return
-	extract_table_tags(&font)
+	font._data = data
+
 	detect_features(&font)
 	extract_basic_metadata(&font)
 
 	return font, .None
 }
 
+table_check_sum :: proc(data: []byte) -> u32be {
+    sum: u32be
+    data_len := len(data)
+    for i := 0; i < data_len; i += 4 {
+        sum += (cast(^u32be)(&data[i]))^
+    }
+    return sum
+}
+
 destroy_font :: proc(font: ^Font) {
-	for _, entry in font._cache {
+	for entry in font._tables {
 		if entry.destroy != nil {
-			entry.destroy(entry.data)
+			entry.destroy(entry.user_data)
 		}
 	}
-	delete(font._cache)
 	delete(font._data)
-	delete(font._tables)
-	delete(font.table_tags)
-	ttf2.font_delete(font._v2)
 }
 
-// sfnt header
-parse_offset_table :: proc(font: ^Font) -> Font_Error {
-	if len(font._data) < size_of(Offset_Table) {
-		return .Invalid_Font_Format
-	}
-
-	raw_offset_table := (cast(^Offset_Table)&font._data[0])
-
-	font._offsets.sfnt_version = be_to_host_u32(raw_offset_table.sfnt_version)
-	font._offsets.num_tables = be_to_host_u16(raw_offset_table.num_tables)
-	font._offsets.search_range = be_to_host_u16(raw_offset_table.search_range)
-	font._offsets.entry_selector = be_to_host_u16(raw_offset_table.entry_selector)
-	font._offsets.range_shift = be_to_host_u16(raw_offset_table.range_shift)
-
-	// Validate sfnt version
-	if font._offsets.sfnt_version != 0x00010000 &&
-	   font._offsets.sfnt_version != 0x4F54544F  /* "OTTO" */{
-		return .Invalid_Font_Format
-	}
-
-	return .None
-}
-
-// Parse the font's table directory
-parse_table_directory :: proc(font: ^Font) -> Font_Error {
-	offset := size_of(Offset_Table)
-
-	table_records_size := int(font._offsets.num_tables) * size_of(Table_Record)
-	if len(font._data) < offset + table_records_size {
-		return .Invalid_Font_Format
-	}
-
-	font._tables = make([]Table_Record, font._offsets.num_tables)
-	for i := 0; i < int(font._offsets.num_tables); i += 1 {
-		table_offset := offset + i * size_of(Table_Record)
-		raw_record := (cast(^Table_Record)&font._data[table_offset])^
-
-		font._tables[i].tag = raw_record.tag
-		font._tables[i].checksum = be_to_host_u32(raw_record.checksum)
-		font._tables[i].offset = be_to_host_u32(raw_record.offset)
-		font._tables[i].length = be_to_host_u32(raw_record.length)
-	}
-
-	return .None
-}
-
-extract_table_tags :: proc(font: ^Font) {
-	font.table_tags = make([dynamic]Table_Tag, 0, len(font._tables))
-	for &table in font._tables {
-		append(&font.table_tags, cast(Table_Tag)tag_to_str(&table.tag))
-	}
-	// Sort tags alphabetically
-	slice.sort(font.table_tags[:])
-}
 // Extract the slice of that table from `_tables`
 get_table_data :: proc(font: ^Font, tag: Table_Tag) -> ([]byte, bool) {
-	tbl_srch: for &table in font._tables {
-		table_tag := cast(Table_Tag)tag_to_str(&table.tag)
-		if table_tag == tag {
-			start := int(table.offset)
-			end := start + int(table.length)
-
-			if start < len(font._data) && end <= len(font._data) {
-				return font._data[start:end], true
-			}
-			break tbl_srch
-		}
-	}
-	return nil, false
+	tbl := &font._tables[tag]
+	return tbl.data, tag in font._has_tables
 }
 
 extract_basic_metadata :: proc(font: ^Font) -> Font_Error {
 	// Get units per em from 'head' table
-	head_data, h_ok := get_table_data(font, "head")
+	head_data, h_ok := get_table_data(font, .head)
 	if !h_ok || len(head_data) < 18 {
 		return .Missing_Required_Table // head table is required
 	}
@@ -140,7 +118,7 @@ extract_basic_metadata :: proc(font: ^Font) -> Font_Error {
 	if font.units_per_em == 0 {return .Invalid_Font_Format}
 
 	// Get num glyphs from 'maxp' table
-	maxp_data, m_ok := get_table_data(font, "maxp")
+	maxp_data, m_ok := get_table_data(font, .maxp)
 	if !m_ok || len(maxp_data) < 6 {return .Missing_Required_Table} 	// maxp table is required 
 
 	ng_offset := transmute(^u16)&maxp_data[4]
@@ -165,59 +143,74 @@ tag_to_str :: proc(tag: ^[4]u8) -> string {
 	return string(p[:clean_len])
 }
 
-detect_features :: proc(font: ^Font) -> Font_Error {
-	for tag in font.table_tags {
-		tag_str := string(tag)
-
-		switch tag_str {
-		case "glyf":
-			font.features += {.TRUETYPE_OUTLINES}
-		case "CFF ", "CFF2":
-			font.features += {.CFF_OUTLINES}
-		case "GSUB":
-			font.features += {.LIGATURES} // Assume ligatures if GSUB exists
-		// Could be refined later by actually checking feature list
-		case "GPOS":
-			font.features += {.KERNING, .MARK_POSITIONING}
-		case "kern":
-			font.features += {.KERNING}
-		case "fvar":
-			font.features += {.VARIABLE_FONT}
-		case "COLR":
-			if has_table(font, "CPAL") {
-				font.features += {.COLOR_GLYPHS}
-			}
-		case "SVG ":
-			font.features += {.SVG_GLYPHS}
-		case "EBDT", "CBDT":
-			font.features += {.BITMAP_GLYPHS}
-		case "vhea", "vmtx":
-			font.features += {.VERTICAL_METRICS}
-		case "MATH":
-			font.features += {.MATHEMATICAL}
-		case "Silf", "Glat", "Gloc", "Feat":
-			font.features += {.GRAPHITE}
-		case "morx", "kerx", "feat":
-			font.features += {.AAT}
-		case "fpgm", "prep", "cvt ":
-			font.features += {.HINTING}
-		}
+detect_features :: proc(font: ^Font) {
+	_font_has_tags :: proc(font: ^Font, tag: Table_Tags) -> bool {
+		return tag - font._has_tables == {}
 	}
+	if _font_has_tags(font, { .glyf }) {
+		font.features += {.TRUETYPE_OUTLINES}
+	}
+	if _font_has_tags(font, { .CFF }) || _font_has_tags(font, { .CFF2 }) {
+		font.features += {.CFF_OUTLINES}
+	}
+	// Could be refined later by actually checking feature list
+	if _font_has_tags(font, { .GSUB }) {
+		font.features += {.LIGATURES} // Assume ligatures if GSUB exists
+	}
+	if _font_has_tags(font, { .GPOS }) {
+		font.features += {.KERNING, .MARK_POSITIONING}
+	}
+	if _font_has_tags(font, { .kern }) {
+		font.features += {.KERNING}
+	}
+	if _font_has_tags(font, { .fvar }) {
+		font.features += {.VARIABLE_FONT}
+	}
+	if _font_has_tags(font, { .COLR, .CPAL }) {
+		font.features += {.COLOR_GLYPHS}
+	}
+	if _font_has_tags(font, { .SVG }) {
+		font.features += {.SVG_GLYPHS}
+	}
+	if _font_has_tags(font, { .EBDT }) || _font_has_tags(font, { .CBDT }) {
+		font.features += {.BITMAP_GLYPHS}
+	}
+	if _font_has_tags(font, { .vhea }) || _font_has_tags(font, { .vmtx }) {
+		font.features += {.VERTICAL_METRICS}
+	}
+	if _font_has_tags(font, { .MATH }) {
+		font.features += {.MATHEMATICAL}
+	}
+	if _font_has_tags(font, { .fpgm, .prep, .cvt }) {
+		font.features += {.HINTING}
+	}
+	// NOTE(lucas): aat font stuff is not part of the OTF spec, do we care about them?
+	//case "Silf", "Glat", "Gloc", "Feat":
+	//	font.features += {.GRAPHITE}
+	//case "morx", "kerx", "feat":
+	//	font.features += {.AAT}
 
 	// Some features need multiple tables - check for additional combinations
 	if .COLOR_GLYPHS not_in font.features {
 		// Check for other color glyph formats that need multiple tables
-		has_cbdt := has_table(font, "CBDT")
-		has_cblc := has_table(font, "CBLC")
-		if has_cbdt && has_cblc {
+		if _font_has_tags(font, { .CBDT, .CBLC }) {
 			font.features += {.COLOR_GLYPHS, .BITMAP_GLYPHS}
 		}
 	}
-
-	return .None
 }
 
 has_table :: proc(font: ^Font, tag: Table_Tag) -> bool {
-	_, found := slice.binary_search(font.table_tags[:], tag)
-	return found
+	return tag in font._has_tables
 }
+
+get_table_from_directory :: proc(ctx: ^Read_Context, offset: i64, length: i64, data: []byte) -> ([]byte, bool) {
+	i64_len := i64(len(data))
+	table_start := offset
+	table_end, did_overflow := intrinsics.overflow_add(offset, length)
+	if offset < 0 || length < 0 || table_start > i64_len || table_end > i64_len || did_overflow {
+		ctx.ok = false
+		return {}, false
+	}
+	return data[table_start:table_end], true
+}
+

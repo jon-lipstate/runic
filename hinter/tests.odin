@@ -74,6 +74,8 @@ when ODIN_OS == .Windows {
 			hinter, hinter_ok := hinter_program_make(&font, 11, 96, context.allocator)
 			testing.expect(t, hinter_ok, file)
 
+			hinter_program_hint_glyph(hinter, 0, context.temp_allocator)
+
 			hinter_program_delete(hinter)
 		}
 	}

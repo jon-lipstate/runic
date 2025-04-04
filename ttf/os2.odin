@@ -329,7 +329,7 @@ OpenType_OS2_Table_V2_Plus :: struct #packed {
 import "core:fmt"
 
 load_os2_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	os2_data, ok := get_table_data(font, "OS/2")
+	os2_data, ok := get_table_data(font, .OS2)
 	if !ok {
 		return {}, .Table_Not_Found
 	}

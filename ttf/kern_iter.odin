@@ -120,17 +120,7 @@ iter_kern_pair :: proc(
 
 // Check if a font has kerning information
 has_kerning :: proc(font: ^Font) -> bool {
-	_, has_kern := get_table_data(font, "kern")
-
-	// Check for both traditional kern table and GPOS kerning
-	if has_kern {
-		return true
-	}
-
-	// Could also check for GPOS kerning here when GPOS is implemented
-	_, has_gpos := get_table_data(font, "GPOS")
-
-	return has_gpos
+	return has_table(font, .kern) || has_table(font, .GPOS)
 }
 
 // Get number of kerning pairs in all subtables

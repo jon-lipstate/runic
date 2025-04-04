@@ -666,7 +666,7 @@ OpenType_Pos_Lookup_Record :: struct #packed {
 
 // Load the GPOS table
 load_gpos_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	gpos_data, ok := get_table_data(font, "GPOS")
+	gpos_data, ok := get_table_data(font, .GPOS)
 	if !ok {
 		return {}, .Table_Not_Found
 	}

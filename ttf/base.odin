@@ -111,7 +111,7 @@ OpenType_Base_Coord_Format3 :: struct #packed {
 
 // Load the BASE table
 load_base_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	base_data, ok := get_table_data(font, "BASE")
+	base_data, ok := get_table_data(font, .BASE)
 	if !ok {
 		return {}, .Table_Not_Found
 	}
@@ -542,8 +542,7 @@ get_baseline_tags :: proc(
 
 // Check if the font has baseline information
 has_baseline_table :: proc(font: ^Font) -> bool {
-	_, has_base := get_table_data(font, "BASE")
-	return has_base
+	return has_table(font, .BASE)
 }
 
 // // Get a specific baseline value by tag

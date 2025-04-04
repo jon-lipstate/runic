@@ -28,11 +28,11 @@ OpenType_Long_Hor_Metric :: struct #packed {
 
 // Load the hmtx table
 load_hmtx_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	hmtx_data, ok := get_table_data(font, "hmtx")
+	hmtx_data, ok := get_table_data(font, .hmtx)
 	if !ok {return {}, .Table_Not_Found}
 
 	// Need hhea table to properly parse hmtx
-	hhea, ok_hhea := get_table(font, "hhea", load_hhea_table, OpenType_Hhea_Table)
+	hhea, ok_hhea := get_table(font, .hhea, load_hhea_table, OpenType_Hhea_Table)
 	if !ok_hhea {return {}, .Missing_Required_Table}
 
 	// Allocate the hmtx table structure

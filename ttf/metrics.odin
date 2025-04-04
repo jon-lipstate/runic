@@ -13,7 +13,7 @@ Glyph_Metrics :: struct {
 
 get_metrics :: proc(font: ^Font, glyph_id: Glyph) -> (metrics: Glyph_Metrics, ok: bool) {
 	// Get glyph bounding box from glyf table
-	glyf, has_glyf := get_table(font, "glyf", load_glyf_table, Glyf_Table)
+	glyf, has_glyf := get_table(font, .glyf, load_glyf_table, Glyf_Table)
 	if !has_glyf {return}
 
 	// Get glyph entry
@@ -40,14 +40,14 @@ get_metrics :: proc(font: ^Font, glyph_id: Glyph) -> (metrics: Glyph_Metrics, ok
 // HEAD Table + Font units_per_em: Last resort for creating an estimate
 get_h_metrics :: proc(font: ^Font, glyph_id: Glyph) -> (advance_width: u16, lsb: i16) {
 	// Try HMTX table first (primary source)
-	hmtx, has_hmtx := get_table(font, "hmtx", load_hmtx_table, OpenType_Hmtx_Table)
+	hmtx, has_hmtx := get_table(font, .hmtx, load_hmtx_table, OpenType_Hmtx_Table)
 	if has_hmtx {
 		advance_width, lsb = htmx_get_metrics(hmtx, glyph_id)
 		return advance_width, lsb
 	}
 
 	// If no hmtx table, try OS/2 for average char width
-	os2, has_os2 := get_table(font, "OS/2", load_os2_table, OS2_Table)
+	os2, has_os2 := get_table(font, .OS2, load_os2_table, OS2_Table)
 	if has_os2 {
 		advance_width = u16(get_avg_char_width(os2))
 		lsb = 0 // Default to 0 when no specific value available
@@ -79,7 +79,7 @@ get_v_metrics :: proc(
 	ok: bool,
 ) {
 	// Try VMTX table first (primary source)
-	vmtx, has_vmtx := get_table(font, "vmtx", load_vmtx_table, OpenType_Vmtx_Table)
+	vmtx, has_vmtx := get_table(font, .vmtx, load_vmtx_table, OpenType_Vmtx_Table)
 	if has_vmtx {
 		advance_height, tsb = vtmx_get_metrics(vmtx, glyph_id)
 
@@ -88,7 +88,7 @@ get_v_metrics :: proc(
 	if bbox == nil {return} 	// all subsequent attemps require a bbox to calculate
 
 	// Try VHEA table next
-	vhea, has_vhea := get_table(font, "vhea", load_vhea_table, Vhea_Table)
+	vhea, has_vhea := get_table(font, .vhea, load_vhea_table, Vhea_Table)
 	if has_vhea {
 		// Use vhea values to approximate
 		advance_height = u16(font.units_per_em)
@@ -99,7 +99,7 @@ get_v_metrics :: proc(
 	}
 
 	// Try OS/2 table
-	os2, has_os2 := get_table(font, "OS/2", load_os2_table, OS2_Table)
+	os2, has_os2 := get_table(font, .OS2, load_os2_table, OS2_Table)
 	if has_os2 {
 		advance_height = u16(font.units_per_em)
 
@@ -114,7 +114,7 @@ get_v_metrics :: proc(
 	}
 
 	// Try HHEA table as fallback for vertical metrics
-	hhea, has_hhea := get_table(font, "hhea", load_hhea_table, OpenType_Hhea_Table)
+	hhea, has_hhea := get_table(font, .hhea, load_hhea_table, OpenType_Hhea_Table)
 	if has_hhea {
 		advance_height = u16(font.units_per_em)
 		// Approximate TSB based on horizontal metrics

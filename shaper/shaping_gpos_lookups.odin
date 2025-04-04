@@ -517,7 +517,7 @@ apply_basic_positioning :: proc(font: ^Font, buffer: ^Shaping_Buffer, cache: ^Sh
 	if buffer == nil {return}
 
 	// Get horizontal metrics (hmtx) table
-	hmtx, has_hmtx := ttf.get_table(font, "hmtx", ttf.load_hmtx_table, ttf.OpenType_Hmtx_Table)
+	hmtx, has_hmtx := ttf.get_table(font, .hmtx, ttf.load_hmtx_table, ttf.OpenType_Hmtx_Table)
 	if !has_hmtx {
 		return
 	}

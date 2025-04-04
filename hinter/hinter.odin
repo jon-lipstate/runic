@@ -30,12 +30,12 @@ Ttf_Hinter_Stage :: enum u8 {
 }
 
 Ttf_Hinter_Round_State :: enum {
-	to_half_grid  ,
-	to_grid		  ,
+	to_half_grid,
+	to_grid,
 	to_double_grid,
-	down_to_grid  ,
-	up_to_grid	  ,
-	off			  ,
+	down_to_grid,
+	up_to_grid,
+	off,
 }
 
 Ttf_Hinter_Instruction :: enum u8 {
@@ -436,6 +436,14 @@ Hinter_Program_Ttf_Stack :: struct {
 	count: int,
 }
 
+Hinter_Font_Wide_Data :: struct {
+	stack_size: i32,
+	storage_size: i32,
+	zone_0_size: i32,
+	shared_instructions: [][]byte,
+	bad_font_program: bool,
+}
+
 Hinter_Program :: struct {
 	font: ^ttf.Font,
 	zone0: Hinter_Program_Ttf_Zone,
@@ -464,7 +472,7 @@ Hinter_Program_Ttf_Zone :: struct {
 Hinter_Program_Execution_Context :: struct {
 	program: ^Hinter_Program,
 	stack: Hinter_Program_Ttf_Stack,
-	glyph: ^ttf.Extracted_Glyph,
+	is_compound_glyph: bool,
 	instructions: Hinter_Program_Ttf_Instructions,
 	gs: Hinter_Program_Ttf_Graphics_State,
 	zp0: ^Hinter_Program_Ttf_Zone,
@@ -1948,15 +1956,14 @@ hinter_program_ttf_is_twilight_zone :: proc(ctx: ^Hinter_Program_Execution_Conte
 }
 
 hinter_program_ttf_ins_shpix :: proc(ctx: ^Hinter_Program_Execution_Context) {
-		amt := hinter_program_f2dot14_to_f32(i16(hinter_program_ttf_stack_pop(ctx, 1)[0]))
+	amt := hinter_program_f2dot14_to_f32(i16(hinter_program_ttf_stack_pop(ctx, 1)[0]))
 	is_twilight_zone := hinter_program_ttf_is_twilight_zone(ctx)
 
 	for _ in 0..<ctx.gs.loop {
 		point_idx := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
 		should_move := is_twilight_zone
 		if ! should_move && ctx.iup_state != TTF_HINTER_TOUCH_XY {
-			_, is_compound := ctx.glyph.(ttf.Extracted_Compound_Glyph)
-			should_move = (is_compound && ctx.gs.free_vector.y != 0) ||
+			should_move = (ctx.is_compound_glyph && ctx.gs.free_vector.y != 0) ||
 			(hinter_program_ttf_get_zp(ctx, ctx.zp2.touch, point_idx) & TTF_HINTER_TOUCH_Y != 0)
 		}
 	
@@ -2409,8 +2416,7 @@ hinter_program_ttf_ins_deltap :: proc(ctx: ^Hinter_Program_Execution_Context) {
 		if delta, ok := hinter_program_ttf_try_get_delta_value(ctx, exc, range); ok {
 			touch_state := hinter_program_ttf_get_zp(ctx, ctx.zp0.touch, point_index)
 			a := ctx.iup_state != TTF_HINTER_TOUCH_XY
-			_, is_compound := ctx.glyph.(ttf.Extracted_Compound_Glyph)
-			b := is_compound && ctx.gs.free_vector.y != 0
+			b := ctx.is_compound_glyph && ctx.gs.free_vector.y != 0
 			c := touch_state & TTF_HINTER_TOUCH_Y != 0
 			can_move := a && b || c
 			if can_move {
@@ -2823,10 +2829,10 @@ hinter_program_ttf_ins_mirp :: proc(ctx: ^Hinter_Program_Execution_Context) {
 	hinter_program_ttf_debug_log(ctx, "    rp2 = %v", ctx.gs.rp2)
 }
 
-hinter_program_context_make :: proc(program: ^Hinter_Program, stage: Ttf_Hinter_Stage, glyph: ^ttf.Extracted_Glyph, debug: bool, instructions: []byte, scratch: mem.Allocator) -> Hinter_Program_Execution_Context {
+hinter_program_context_make :: proc(program: ^Hinter_Program, stage: Ttf_Hinter_Stage, is_compound_glyph: bool, debug: bool, instructions: []byte, scratch: mem.Allocator) -> Hinter_Program_Execution_Context {
 	program_ctx: Hinter_Program_Execution_Context
 	program_ctx.program = program
-	program_ctx.glyph = glyph
+	program_ctx.is_compound_glyph = is_compound_glyph
 	program_ctx.stage = stage
 	program_ctx.gs = HINTER_PROGRAM_TTF_GRAPHICS_STATE_DEFAULT
 	program_ctx.zp0 = &program.zone1
@@ -2840,22 +2846,43 @@ hinter_program_context_make :: proc(program: ^Hinter_Program, stage: Ttf_Hinter_
 	return program_ctx
 }
 
+hinter_program_load_font_wide_program :: proc(font: ^ttf.Font) -> (^Hinter_Font_Wide_Data, bool) {
+	_load :: proc(f: ^ttf.Font) -> (ttf.Table_Entry, ttf.Font_Error) {
+		maxp, ok := ttf.get_table(f, .maxp, ttf.load_maxp_table, ttf.Maxp_Table)
+		if ! ok {
+			return {}, .Missing_Required_Table
+		}
+		// NOTE(lucas): we should move this into a private arena
+		font_data := new(Hinter_Font_Wide_Data)
+		// NOTE(lucas): some fonts lie about their stack size and report a number too small
+		// just add 32 for safety
+		font_data.stack_size = i32(maxp.data.v1_0.max_stack_elements) + 32
+		font_data.zone_0_size = i32(maxp.data.v1_0.max_twilight_points)
+		font_data.storage_size = i32(maxp.data.v1_0.max_storage)
+		// NOTE(lucas): we should move this into a private arena
+		font_data.shared_instructions = make([][]byte, maxp.data.v1_0.max_function_defs)
+		
+		program: Hinter_Program	
+		program.shared_intructions = font_data.shared_instructions
+		program.stack_data = make([]i32, font_data.stack_size, context.temp_allocator)
+
+		fpgm, _ := ttf.get_table_data(f, .fpgm)
+
+		program_ctx := hinter_program_context_make(&program, .font, false, false, fpgm, {})
+		font_data.bad_font_program = ! hinter_program_ttf_execute(&program_ctx)
+		return { font_data, nil }, nil
+	}
+	return ttf.get_table(font, .fpgm, _load, Hinter_Font_Wide_Data)
+}
+
 hinter_program_make :: proc(font: ^ttf.Font, pt_size: f32, dpi: f32, allocator: mem.Allocator, debug := false) -> (^Hinter_Program, bool) {
-	if ! font._v2.hinting_data.enabled {
+	if .HINTING not_in font.features {
 		return {}, false
 	}
 
-	if ! font._v2.hinting_data.ran_font_program {
-		program: Hinter_Program	
-		program.shared_intructions = font._v2.hinting_data.shared_instructions
-		program.stack_data = make([]i32, font._v2.hinting_data.stack_size, context.temp_allocator)
-
-		program_ctx := hinter_program_context_make(&program, .font, nil, true, font._v2.tables[.fpgm].data, {})
-		if hinter_program_ttf_execute(&program_ctx) {
-			font._v2.hinting_data.ran_font_program = true
-		} else {
-			return {}, false
-		}
+	font_data, has_font_data := hinter_program_load_font_wide_program(font)
+	if ! has_font_data || font_data.bad_font_program {
+		return {}, false
 	}
 
 	ppem := max(math.round((pt_size * dpi) / 72), 0)
@@ -2863,17 +2890,18 @@ hinter_program_make :: proc(font: ^ttf.Font, pt_size: f32, dpi: f32, allocator: 
 		return {}, false
 	}
 
-	cvt_table := slice.reinterpret([]i16be, font._v2.tables[.cvt].data)
+	raw_cvt, _ := ttf.get_table_data(font, .cvt)
+	cvt_table := slice.reinterpret([]i16be, raw_cvt)
 
 	base, program, cvt, storage, zone_0_orig_scaled, zone_0_cur, zone_0_touch, stack_data, alloc_err :=
 		make_multi(
 			Make_Multi(^Hinter_Program) {},
 			Make_Multi([]f32) { len = len(cvt_table) },
-			Make_Multi([]i32) { len = int(font._v2.hinting_data.storage_size) },
-			Make_Multi([][2]f32) { len = int(font._v2.hinting_data.zone_0_size) },
-			Make_Multi([][2]f32) { len = int(font._v2.hinting_data.zone_0_size) },
-			Make_Multi([]u8) { len = int(font._v2.hinting_data.zone_0_size) },
-			Make_Multi([]i32) { len = int(font._v2.hinting_data.stack_size) },
+			Make_Multi([]i32) { len = int(font_data.storage_size) },
+			Make_Multi([][2]f32) { len = int(font_data.zone_0_size) },
+			Make_Multi([][2]f32) { len = int(font_data.zone_0_size) },
+			Make_Multi([]u8) { len = int(font_data.zone_0_size) },
+			Make_Multi([]i32) { len = int(font_data.stack_size) },
 			allocator
 		)
 	if alloc_err != nil {
@@ -2891,18 +2919,20 @@ hinter_program_make :: proc(font: ^ttf.Font, pt_size: f32, dpi: f32, allocator: 
 	program.zone0.cur = zone_0_cur
 	program.zone0.touch = zone_0_touch
 	program.stack_data = stack_data
-	program.shared_intructions = font._v2.hinting_data.shared_instructions
+	program.shared_intructions = font_data.shared_instructions
 	program.ppem = u32(ppem)
 	program.point_size = pt_size
 	program.clear_type_enabled = true
-	program.funits_to_pixels_scale = f32(f32(u32(ppem)) / font._v2.units_per_em)
+	program.funits_to_pixels_scale = f32(f32(u32(ppem)) / f32(font.units_per_em))
 	program.base_ptr = base
 	program.allocator = allocator
 
 	for _, i in cvt_table {
 		program.cvt[i] = f32(u32(cvt_table[i])) * program.funits_to_pixels_scale
 	}
-	program_ctx := hinter_program_context_make(program, .cvt, nil, debug, font._v2.tables[.prep].data, {})
+
+	prep, _ := ttf.get_table_data(font, .prep)
+	program_ctx := hinter_program_context_make(program, .cvt, false, debug, prep, {})
 
 	if ! hinter_program_ttf_execute(&program_ctx) {
 		return {}, false
@@ -2928,8 +2958,8 @@ hinter_program_same_sign :: proc(a, b: f32) -> bool {
 hinter_program_hint_glyph :: proc(program: ^Hinter_Program, glyph_id: ttf.Glyph, allocator: mem.Allocator, debug := false) -> (ttf.Extracted_Simple_Glyph, bool) {
 	scratch := memory.arena_scratch({ allocator })
 
-	glyphs_to_hint := make([dynamic]Glyph_Job, scratch)
-	gather_glyphs_jobs(&glyphs_to_hint, program.font, glyph_id, ttf.IDENTITY_MATRIX, false)
+	glyphs_to_hint := make([dynamic]Glyph_Job, 0, 8, scratch)
+	gather_glyphs_jobs(&glyphs_to_hint, program.font, glyph_id, ttf.IDENTITY_MATRIX, false, scratch)
 	if len(glyphs_to_hint) == 0 {
 			return { glyph_id = glyph_id }, true
 	}
@@ -3054,7 +3084,7 @@ hinter_program_hint_glyph :: proc(program: ^Hinter_Program, glyph_id: ttf.Glyph,
 
 		if len(glyph_instructions) > 0 {
 			memory.scratch_temp_scope(scratch)
-			program_ctx := hinter_program_context_make(program, .glyph, g.glyph, debug, glyph_instructions, scratch)
+			program_ctx := hinter_program_context_make(program, .glyph, is_compound, debug, glyph_instructions, scratch)
 
 			when HINTER_DEBUG_ENABLED {
 				if debug {
@@ -3173,20 +3203,20 @@ hinter_program_hint_glyph :: proc(program: ^Hinter_Program, glyph_id: ttf.Glyph,
 
 Glyph_Job :: struct {
 	glyph_id: ttf.Glyph,
-	glyph: ^ttf.Extracted_Glyph,
+	glyph: ttf.Extracted_Glyph,
 	transform: matrix[2, 3]f32,
 	child_contour_length: int,
 	child_length: int,
 	round_transform: bool,
 }
 
-gather_glyphs_jobs :: proc(glyphs_to_hint: ^[dynamic]Glyph_Job, font: ^ttf.Font, glyph_id: ttf.Glyph, transform: matrix[2, 3]f32, round_transform: bool) -> (int, int) {
+gather_glyphs_jobs :: proc(glyphs_to_hint: ^[dynamic]Glyph_Job, font: ^ttf.Font, glyph_id: ttf.Glyph, transform: matrix[2, 3]f32, round_transform: bool, allocator: runtime.Allocator) -> (int, int) {
 	glyf_table, err := ttf.load_glyf_table(font)
 	if err != nil {
 		return 0, 0
 	}
 
-	g, ok := ttf.get_extracted_glyph(font, glyph_id)
+	g, ok := ttf.get_extracted_glyph(font, glyph_id, allocator)
 	child_contour_length := 0
 	child_length := 1
 	if ok {
@@ -3195,7 +3225,7 @@ gather_glyphs_jobs :: proc(glyphs_to_hint: ^[dynamic]Glyph_Job, font: ^ttf.Font,
 				child_contour_length += len(glyph.contour_endpoints)
 		case ttf.Extracted_Compound_Glyph:
 			for c in glyph.components {
-				contour_len, child_len := gather_glyphs_jobs(glyphs_to_hint, font, c.glyph_id, c.transform, c.round_to_grid)
+				contour_len, child_len := gather_glyphs_jobs(glyphs_to_hint, font, c.glyph_id, c.transform, c.round_to_grid, allocator)
 				child_contour_length += contour_len
 				child_length += child_len
 			}

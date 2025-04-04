@@ -8,6 +8,7 @@ sequence of contours. For simple glyphs, these contours directly represent the g
 For composite glyphs, the contours from other glyphs are combined to form the final glyph.
 */
 import "core:fmt"
+import "base:runtime"
 
 Glyf_Table :: struct {
 	data: []byte, // Raw glyf table data
@@ -116,12 +117,12 @@ read_composite_glyph_flags :: proc(f: u16) -> Composite_Glyph_Flags {
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
 load_glyf_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	glyf_data, ok := get_table_data(font, "glyf")
+	glyf_data, ok := get_table_data(font, .glyf)
 	if !ok {return {}, .Table_Not_Found}
 
 	// The glyf table just consists of a block of glyph data
 	// We need the loca table to index into it correctly
-	loca, has_loca := get_table(font, "loca", load_loca_table, Loca_Table)
+	loca, has_loca := get_table(font, .loca, load_loca_table, Loca_Table)
 	if !has_loca {return {}, .Missing_Required_Table}
 
 	// Create the glyf table structure
@@ -404,3 +405,13 @@ next_component :: proc(parser: ^Component_Parser) -> (component: Composite_Compo
 
 	return component, true
 }
+
+get_extracted_glyph :: proc(font: ^Font, glyph_id: Glyph, allocator: runtime.Allocator) -> (Extracted_Glyph, bool) {
+	glyf, has_glyf := get_table(font, .glyf, load_glyf_table, Glyf_Table)
+	if has_glyf {
+		return extract_glyph(glyf, glyph_id, allocator)
+	} else {
+		return {}, false
+	}
+}
+

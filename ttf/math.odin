@@ -185,7 +185,7 @@ Math_Glyph_Part_Flags :: bit_field u16be {
 
 // Load the MATH table
 load_math_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	math_data, ok := get_table_data(font, "MATH")
+	math_data, ok := get_table_data(font, .MATH)
 	if !ok {return {}, .Table_Not_Found}
 
 	// Check minimum size for header
@@ -755,10 +755,10 @@ get_closest_math_variant :: proc(
 	variant_glyph = glyph_id
 	actual_size = 0
 	// Find the original glyph's size
-	hmtx, hmtx_ok := get_table(math.font, "hmtx", load_hmtx_table, OpenType_Hmtx_Table)
+	hmtx, hmtx_ok := get_table(math.font, .hmtx, load_hmtx_table, OpenType_Hmtx_Table)
 	if hmtx_ok {
 		if is_vertical {
-			vmtx, vmtx_ok := get_table(math.font, "vmtx", load_vmtx_table, OpenType_Vmtx_Table)
+			vmtx, vmtx_ok := get_table(math.font, .vmtx, load_vmtx_table, OpenType_Vmtx_Table)
 			if vmtx_ok {
 				actual_size, _ = vtmx_get_metrics(vmtx, glyph_id)
 			}

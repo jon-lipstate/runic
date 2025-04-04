@@ -22,7 +22,7 @@ OpenType_Hhea_Table :: struct {
 }
 
 load_hhea_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	hhea_data, ok := get_table_data(font, "hhea")
+	hhea_data, ok := get_table_data(font, .hhea)
 	if !ok {return {}, .Table_Not_Found}
 
 	// Check minimum size for header
