@@ -10,7 +10,7 @@ map_runes_to_glyphs :: proc(font: ^Font, buffer: ^Shaping_Buffer, cache: ^Shapin
 	reserve(&buffer.glyphs, len(buffer.runes))
 
 	// Get GDEF table if available
-	gdef, has_gdef := ttf.get_table(font, "GDEF", ttf.load_gdef_table, ttf.GDEF_Table)
+	gdef, has_gdef := ttf.get_table(font, .GDEF, ttf.load_gdef_table, ttf.GDEF_Table)
 
 	// Determine if we need to process in visual RTL order
 	is_rtl := buffer.direction == .Right_To_Left

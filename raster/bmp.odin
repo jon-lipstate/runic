@@ -1,6 +1,7 @@
 package rasterizer
 
 import "../ttf"
+import "../memory"
 import "core:fmt"
 import "core:math"
 import "core:os"
@@ -336,23 +337,14 @@ rasterize_glyph :: proc(
 	bitmap: ^Bitmap,
 	size_px: f32,
 ) -> bool {
-	if int(glyph_id) >= len(font._v2.glyphs) {
+	if u16(glyph_id) >= font.num_glyphs {
 		return false
 	}
-	glyf, has_glyf := ttf.get_table(font, "glyf", ttf.load_glyf_table, ttf.Glyf_Table)
+	glyf, has_glyf := ttf.get_table(font, .glyf, ttf.load_glyf_table, ttf.Glyf_Table)
 	if !has_glyf {return false}
 	// Get the glyph outline
-	extracted: ttf.Extracted_Glyph
-	ok: bool
-	if font._v2.glyphs[glyph_id] == nil {
-		extracted, ok = ttf.extract_glyph(glyf, glyph_id, font._v2.allocator)
-		if ok {
-			font._v2.glyphs[glyph_id] = new_clone(extracted, font._v2.allocator)
-		}
-	} else {
-		extracted = font._v2.glyphs[glyph_id]^
-		ok = true
-	}
+	scratch := memory.arena_scratch({})
+	extracted, ok := ttf.get_extracted_glyph(font, glyph_id, scratch)
 	if !ok {
 		fmt.println("failed to extract glyph")
 	}

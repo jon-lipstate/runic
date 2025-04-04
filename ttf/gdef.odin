@@ -192,7 +192,7 @@ OpenType_Item_Variation_Data :: struct #packed {
 }
 
 load_gdef_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	gdef_data, ok := get_table_data(font, "GDEF")
+	gdef_data, ok := get_table_data(font, .GDEF)
 	if !ok {
 		return {}, .Table_Not_Found
 	}

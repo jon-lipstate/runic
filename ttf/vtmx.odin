@@ -28,11 +28,11 @@ OpenType_Vertical_Metric :: struct #packed {
 
 // Load the vmtx table
 load_vmtx_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	vmtx_data, ok := get_table_data(font, "vmtx")
+	vmtx_data, ok := get_table_data(font, .vmtx)
 	if !ok {return {}, .Table_Not_Found}
 
 	// Need vhea table to properly parse vmtx
-	vhea, ok_vhea := get_table(font, "vhea", load_vhea_table, Vhea_Table)
+	vhea, ok_vhea := get_table(font, .vhea, load_vhea_table, Vhea_Table)
 	if !ok_vhea {return {}, .Missing_Required_Table}
 
 	// Allocate the vmtx table structure

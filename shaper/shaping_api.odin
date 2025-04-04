@@ -81,7 +81,7 @@ shape_with_cache :: proc(
 	}
 
 	// Apply substitutions (GSUB)
-	gsub, has_gsub := ttf.get_table(font, "GSUB", ttf.load_gsub_table, ttf.GSUB_Table)
+	gsub, has_gsub := ttf.get_table(font, .GSUB, ttf.load_gsub_table, ttf.GSUB_Table)
 	if has_gsub && len(cache.gsub_lookups) > 0 {
 		// Check if we have acceleration structures built
 		if len(cache.gsub_accel.single_subst) > 0 || len(cache.gsub_accel.ligature_subst) > 0 {
@@ -111,7 +111,7 @@ shape_with_cache :: proc(
 	apply_basic_positioning(font, buffer, cache)
 
 	// Apply positioning (GPOS)
-	gpos, has_gpos := ttf.get_table(font, "GPOS", ttf.load_gpos_table, ttf.GPOS_Table)
+	gpos, has_gpos := ttf.get_table(font, .GPOS, ttf.load_gpos_table, ttf.GPOS_Table)
 	if has_gpos && len(cache.gpos_lookups) > 0 {
 		// Apply positioning lookups from the cache
 		apply_positioning_lookups(gpos, cache.gpos_lookups, buffer)

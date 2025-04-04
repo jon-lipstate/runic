@@ -56,7 +56,7 @@ OpenType_Maxp_Table_V1_0 :: struct #packed {
 
 // Load the maxp table
 load_maxp_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	maxp_data, ok := get_table_data(font, "maxp")
+	maxp_data, ok := get_table_data(font, .maxp)
 	if !ok {return {}, .Table_Not_Found}
 
 	// Check minimum size for version field

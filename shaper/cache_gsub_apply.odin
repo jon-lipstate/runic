@@ -51,7 +51,7 @@ apply_gsub_with_accelerator :: proc(
 ) -> bool {
 	assert(cache != nil)
 
-	gsub, has_gsub := ttf.get_table(font, "GSUB", ttf.load_gsub_table, ttf.GSUB_Table)
+	gsub, has_gsub := ttf.get_table(font, .GSUB, ttf.load_gsub_table, ttf.GSUB_Table)
 	if !has_gsub {return false}
 
 	accel := &cache.gsub_accel

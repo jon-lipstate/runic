@@ -30,19 +30,19 @@ Loca_Format :: enum u16 {
 
 // Load the loca table
 load_loca_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	loca_data, ok := get_table_data(font, "loca")
+	loca_data, ok := get_table_data(font, .loca)
 	if !ok {
 		return {}, .Table_Not_Found
 	}
 
 	// We need the head table to determine the format
-	head, ok_head := get_table(font, "head", load_head_table, OpenType_Head_Table)
+	head, ok_head := get_table(font, .head, load_head_table, OpenType_Head_Table)
 	if !ok_head {
 		return {}, .Missing_Required_Table
 	}
 
 	// We need maxp to get numGlyphs
-	maxp, ok_maxp := get_table(font, "maxp", load_maxp_table, Maxp_Table)
+	maxp, ok_maxp := get_table(font, .maxp, load_maxp_table, Maxp_Table)
 	if !ok_maxp {
 		return {}, .Missing_Required_Table
 	}

@@ -67,7 +67,7 @@ Mac_Style :: bit_field u16be {
 
 // Load the head table
 load_head_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	head_data, ok := get_table_data(font, "head")
+	head_data, ok := get_table_data(font, .head)
 	if !ok {return {}, .Table_Not_Found}
 
 	// Check minimum size for header

@@ -3,7 +3,7 @@ package ttf
 import "core:fmt"
 
 get_glyph_from_cmap :: proc(font: ^Font, codepoint: rune) -> (Glyph, bool) {
-	cmap_table, ok := get_table(font, "cmap", load_cmap_table, CMAP_Table)
+	cmap_table, ok := get_table(font, .cmap, load_cmap_table, CMAP_Table)
 	if !ok {return 0, false}
 
 	// Prioritized checking order:
@@ -405,7 +405,7 @@ get_variation_selector_glyph :: proc(
 	glyph: Glyph,
 	found: bool,
 ) {
-	cmap_table, ok := get_table(font, "cmap", load_cmap_table, CMAP_Table)
+	cmap_table, ok := get_table(font, .cmap, load_cmap_table, CMAP_Table)
 	if !ok {return 0, false}
 
 	// Find Format 14 subtable

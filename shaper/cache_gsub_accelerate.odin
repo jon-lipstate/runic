@@ -154,7 +154,7 @@ has_gsub_acceleration :: proc(cache: ^Shaping_Cache) -> bool {
 
 // Build GSUB accelerator for a specific lookup
 build_gsub_accelerator :: proc(font: ^Font, cache: ^Shaping_Cache) -> bool {
-	gsub, has_gsub := ttf.get_table(font, "GSUB", ttf.load_gsub_table, ttf.GSUB_Table)
+	gsub, has_gsub := ttf.get_table(font, .GSUB, ttf.load_gsub_table, ttf.GSUB_Table)
 	if !has_gsub || cache.gsub_lookups == nil {return false}
 
 	accel := &cache.gsub_accel

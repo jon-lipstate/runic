@@ -196,7 +196,7 @@ Nondefault_UVS_Mapping :: struct {
 	glyph_id: Glyph,
 }
 load_cmap_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	cmap_data, ok := get_table_data(font, "cmap")
+	cmap_data, ok := get_table_data(font, .cmap)
 	if !ok || len(cmap_data) < 4 {
 		return {}, .Missing_Required_Table
 	}

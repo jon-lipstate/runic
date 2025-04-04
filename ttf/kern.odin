@@ -120,7 +120,7 @@ OpenType_Kern_Format_3_Header :: struct #packed {
 
 // Load the kern table
 load_kern_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	kern_data, ok := get_table_data(font, "kern")
+	kern_data, ok := get_table_data(font, .kern)
 	if !ok {return {}, .Table_Not_Found}
 
 	// Check minimum size for header

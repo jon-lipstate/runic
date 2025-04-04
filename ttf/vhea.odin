@@ -44,7 +44,7 @@ OpenType_Vhea_Table :: struct #packed {
 
 
 load_vhea_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	vhea_data, ok := get_table_data(font, "vhea")
+	vhea_data, ok := get_table_data(font, .vhea)
 	if !ok {
 		return {}, .Table_Not_Found
 	}
@@ -146,8 +146,8 @@ get_number_of_v_metrics :: proc(vhea: ^Vhea_Table) -> u16 {
 // Check if font has vertical metrics
 has_vertical_metrics :: proc(font: ^Font) -> bool {
 	// A font has vertical metrics if it has both vhea and vmtx tables
-	_, has_vhea := get_table_data(font, "vhea")
-	_, has_vmtx := get_table_data(font, "vmtx")
+	_, has_vhea := get_table_data(font, .vhea)
+	_, has_vmtx := get_table_data(font, .vmtx)
 	return has_vhea && has_vmtx
 }
 

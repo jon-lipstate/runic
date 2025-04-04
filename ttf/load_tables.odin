@@ -22,9 +22,20 @@ get_table :: proc(
 	^T,
 	bool,
 ) {
-	if entry, exists := font._cache[tag]; exists {return transmute(^T)entry.data, true}
-	entry, err := loader(font)
-	if err != nil {return nil, false}
-	ok := register_table(font, tag, entry.data, entry.destroy)
-	return transmute(^T)entry.data, ok
+	if tag not_in font._has_tables {
+		return nil, false
+	}
+	tbl := &font._tables[tag]
+	if tbl.has_user_data {
+		return cast(^T)tbl.user_data, true
+	}
+	new_entry, err := loader(font)
+	if err != nil {
+		return nil, false
+	}
+	tbl.user_data = new_entry.data
+	tbl.destroy = new_entry.destroy
+	tbl.has_user_data = true
+	return cast(^T)tbl.user_data, true
 }
+

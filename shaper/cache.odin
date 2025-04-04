@@ -49,9 +49,9 @@ get_or_create_shape_cache :: proc(
 ) -> (
 	cache: ^Shaping_Cache,
 ) {
-	// Preload GDEF & htmx to get the 'hit' during cache creation
-	ttf.get_table(font, "GDEF", ttf.load_gdef_table, ttf.GDEF_Table)
-	ttf.get_table(font, "htmx", ttf.load_hmtx_table, ttf.OpenType_Hmtx_Table)
+	// Preload GDEF & hmtx to get the 'hit' during cache creation
+	ttf.get_table(font, .GDEF, ttf.load_gdef_table, ttf.GDEF_Table)
+	ttf.get_table(font, .hmtx, ttf.load_hmtx_table, ttf.OpenType_Hmtx_Table)
 
 	// Create cache key
 	cache_key := Shaping_Cache_Key {
@@ -80,7 +80,7 @@ get_or_create_shape_cache :: proc(
 	build_cmap_accelerator(font, &new_cache, script)
 
 	// --- Process GSUB lookups ---
-	gsub, has_gsub := ttf.get_table(font, "GSUB", ttf.load_gsub_table, ttf.GSUB_Table)
+	gsub, has_gsub := ttf.get_table(font, .GSUB, ttf.load_gsub_table, ttf.GSUB_Table)
 	if has_gsub {
 		// Find language system
 		gsub_script_record, gsub_script_offset, gsub_lang_sys_offset, gsub_found :=
@@ -158,7 +158,7 @@ get_or_create_shape_cache :: proc(
 
 
 	// --- Process GPOS lookups ---
-	gpos, has_gpos := ttf.get_table(font, "GPOS", ttf.load_gpos_table, ttf.GPOS_Table)
+	gpos, has_gpos := ttf.get_table(font, .GPOS, ttf.load_gpos_table, ttf.GPOS_Table)
 	if has_gpos {
 		// fmt.println("---- Processing GPOS ----")
 		// Find language system for GPOS

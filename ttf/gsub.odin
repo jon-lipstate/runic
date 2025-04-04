@@ -455,7 +455,7 @@ OpenType_Feature_Table_Substitution_Record :: struct #packed {
 Mark_Attachment_Type :: distinct USHORT
 
 load_gsub_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
-	gsub_data, ok := get_table_data(font, "GSUB")
+	gsub_data, ok := get_table_data(font, .GSUB)
 	if !ok {
 		return {}, .Table_Not_Found
 	}

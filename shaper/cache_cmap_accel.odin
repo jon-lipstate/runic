@@ -52,7 +52,7 @@ build_cmap_accelerator :: proc(font: ^Font, cache: ^Shaping_Cache, script: Scrip
 	accel := &cache.cmap_accel
 
 	// Get the cmap table
-	cmap_table, has_cmap := ttf.get_table(font, "cmap", ttf.load_cmap_table, ttf.CMAP_Table)
+	cmap_table, has_cmap := ttf.get_table(font, .cmap, ttf.load_cmap_table, ttf.CMAP_Table)
 	if !has_cmap {
 		return false
 	}

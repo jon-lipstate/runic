@@ -1,12 +1,14 @@
 package main
 
 import "core:fmt"
+import "core:log"
 import "core:math"
 import "core:mem"
 import "core:os"
 import "core:strings"
 import "core:unicode/utf8"
 
+import hinter "./hinter"
 import raster "./raster"
 import shaper "./shaper"
 import ttf "./ttf"
@@ -54,6 +56,7 @@ spall_exit :: proc "contextless" (
 // }
 // track: ^mem.Tracking_Allocator
 main :: proc() {
+	context.logger = log.create_console_logger()
 	spall_ctx = spall.context_create("rune.spall")
 	defer spall.context_destroy(&spall_ctx)
 
@@ -98,7 +101,7 @@ main :: proc() {
 test_specific_glyphs :: proc(font: ^ttf.Font) {
 	// fmt.println("\nTesting specific glyphs...")
 
-	cmap_table, has_cmap := ttf.get_table(font, "cmap", ttf.load_cmap_table, ttf.CMAP_Table)
+	cmap_table, has_cmap := ttf.get_table(font, .cmap, ttf.load_cmap_table, ttf.CMAP_Table)
 	if !has_cmap {
 		// fmt.println("Error: Could not load cmap table")
 		return
@@ -119,8 +122,8 @@ test_specific_glyphs :: proc(font: ^ttf.Font) {
 test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font: ^ttf.Font) {
 	// single sub ؛ arabic semi colon
 	//test_text := "مرحباً"
-	// test_text := "Áffinity"
-	test_text := transmute(string)#load("test_text.txt")
+	test_text := "Áffinity"
+	//test_text := transmute(string)#load("test_text.txt")
 
 	features := shaper.create_feature_set(
 		.ccmp, // Glyph composition/decomposition
@@ -162,8 +165,8 @@ test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font:
 	}
 	// fmt.println("Glyph count:", len(buffer.glyphs))
 
-	// fmt.println("\nRendering text...")
-	// render_text(font, buffer, size_px, "text.bmp")
+	fmt.println("\nRendering text...")
+	render_text(font, buffer, size_px, "text.bmp")
 }
 
 
@@ -175,7 +178,7 @@ render_text :: proc(
 ) -> bool {
 	hhea_table, has_hhea := ttf.get_table(
 		font,
-		"hhea",
+		.hhea,
 		ttf.load_hhea_table,
 		ttf.OpenType_Hhea_Table,
 	)
@@ -230,8 +233,11 @@ render_text :: proc(
 		raster.draw_pixel(&bitmap, x, baseline_y, 200)
 	}
 
-	glyf, has_glyf := ttf.get_table(font, "glyf", ttf.load_glyf_table, ttf.Glyf_Table)
+	glyf, has_glyf := ttf.get_table(font, .glyf, ttf.load_glyf_table, ttf.Glyf_Table)
 	assert(has_glyf)
+
+	hinter_program, hinter_ok := hinter.hinter_program_make(font, 11, 96, context.temp_allocator)
+	assert(hinter_ok)
 
 	// Place each glyph
 	for i := 0; i < len(buffer.glyphs); i += 1 {
@@ -241,16 +247,14 @@ render_text :: proc(
 		x_offset := int(f32(buffer.positions[i].x_offset) * scale)
 		y_offset := int(f32(buffer.positions[i].y_offset) * scale)
 
-		// Get the glyph outline
-		extracted, ok := ttf.extract_glyph(glyf, glyph_id)
-		if !ok {
-			fmt.println("failed to extract glyph")
-		}
-		outline, ook := ttf.create_outline_from_extracted(glyf, &extracted)
-		if !ook {
-			fmt.println("Failed to create contour")
-			return false
-		}
+		extracted_simple, ok := hinter.hinter_program_hint_glyph(hinter_program, glyph_id, context.temp_allocator)
+		assert(ok)
+		extracted: ttf.Extracted_Glyph = extracted_simple
+	outline, ook := ttf.create_outline_from_extracted(glyf, &extracted)
+	if !ook {
+		fmt.println("Failed to create contour")
+		return false
+	}
 		defer ttf.destroy_glyph_outline(&outline)
 
 		// Skip empty glyphs (spaces, etc.) but apply advance

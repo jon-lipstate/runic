@@ -1,4 +1,4 @@
-package runic_ttf
+package ttf
 
 import "core:mem"
 import "core:log"
