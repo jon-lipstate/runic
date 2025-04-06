@@ -455,25 +455,30 @@ OpenType_Feature_Table_Substitution_Record :: struct #packed {
 Mark_Attachment_Type :: distinct USHORT
 
 load_gsub_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	gsub_data, ok := get_table_data(font, .GSUB)
 	if !ok {
+		ctx.ok = false
 		return {}, .Table_Not_Found
 	}
 
 	// Check minimum size for header
 	if len(gsub_data) < size_of(OpenType_GSUB_Header) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
 	// Allocate the table structure
-	gsub := new(GSUB_Table)
+	gsub := new(GSUB_Table, font.allocator)
 	gsub.raw_data = gsub_data
 	gsub.header = cast(^OpenType_GSUB_Header)&gsub_data[0]
 
 	// Validate and load script list
 	script_list_offset := uint(gsub.header.script_list_offset)
 	if script_list_offset >= uint(len(gsub_data)) {
-		free(gsub)
+		ctx.ok = false
 		return {}, .Invalid_Table_Offset
 	}
 	gsub.script_list = cast(^OpenType_Script_List)&gsub_data[script_list_offset]
@@ -481,7 +486,7 @@ load_gsub_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	// Validate and load feature list
 	feature_list_offset := uint(gsub.header.feature_list_offset)
 	if feature_list_offset >= uint(len(gsub_data)) {
-		free(gsub)
+		ctx.ok = false
 		return {}, .Invalid_Table_Offset
 	}
 	gsub.feature_list = cast(^OpenType_Feature_List)&gsub_data[feature_list_offset]
@@ -489,7 +494,7 @@ load_gsub_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	// Validate and load lookup list
 	lookup_list_offset := uint(gsub.header.lookup_list_offset)
 	if lookup_list_offset >= uint(len(gsub_data)) {
-		free(gsub)
+		ctx.ok = false
 		return {}, .Invalid_Table_Offset
 	}
 	gsub.lookup_list = cast(^OpenType_Lookup_List)&gsub_data[lookup_list_offset]
@@ -503,11 +508,6 @@ load_gsub_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 		}
 	}
 
-	return Table_Entry{data = gsub, destroy = destroy_gsub_table}, .None
+	return Table_Entry{data = gsub}, .None
 }
 
-destroy_gsub_table :: proc(tbl: rawptr) {
-	if tbl == nil {return}
-	gsub := cast(^GSUB_Table)tbl
-	free(gsub)
-}

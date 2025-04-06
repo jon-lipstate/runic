@@ -44,18 +44,23 @@ OpenType_Vhea_Table :: struct #packed {
 
 
 load_vhea_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	vhea_data, ok := get_table_data(font, .vhea)
 	if !ok {
+		ctx.ok = false
 		return {}, .Table_Not_Found
 	}
 
 	// Check minimum size for the vhea table
 	if len(vhea_data) < size_of(OpenType_Vhea_Table) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
 	// Create a new Vhea_Table structure
-	vhea := new(Vhea_Table)
+	vhea := new(Vhea_Table, font.allocator)
 	vhea.raw_data = vhea_data
 	vhea.data = cast(^OpenType_Vhea_Table)&vhea_data[0]
 
@@ -67,17 +72,11 @@ load_vhea_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 		vhea.version = .Version_1_1
 	} else {
 		// Unknown version
-		free(vhea)
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
-	return Table_Entry{data = vhea, destroy = destroy_vhea_table}, .None
-}
-
-destroy_vhea_table :: proc(data: rawptr) {
-	if data == nil {return}
-	vhea := cast(^Vhea_Table)data
-	free(vhea)
+	return Table_Entry{data = vhea}, .None
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////

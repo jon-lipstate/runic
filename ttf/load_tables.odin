@@ -34,7 +34,6 @@ get_table :: proc(
 		return nil, false
 	}
 	tbl.user_data = new_entry.data
-	tbl.destroy = new_entry.destroy
 	tbl.has_user_data = true
 	return cast(^T)tbl.user_data, true
 }

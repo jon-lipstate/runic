@@ -192,18 +192,23 @@ OpenType_Item_Variation_Data :: struct #packed {
 }
 
 load_gdef_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	gdef_data, ok := get_table_data(font, .GDEF)
 	if !ok {
+		ctx.ok = false
 		return {}, .Table_Not_Found
 	}
 
 	// Check minimum size for header
 	if len(gdef_data) < size_of(OpenType_GDEF_Header) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
 	// Allocate the table structure
-	gdef := new(GDEF_Table)
+	gdef := new(GDEF_Table, font.allocator)
 	gdef.raw_data = gdef_data
 	gdef.header = cast(^OpenType_GDEF_Header)&gdef_data[0]
 
@@ -214,7 +219,7 @@ load_gdef_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	if gdef.header.glyph_class_def_offset > 0 {
 		gdef_offset := uint(gdef.header.glyph_class_def_offset)
 		if bounds_check(gdef_offset + 2 > uint(len(gdef_data))) {
-			free(gdef)
+			ctx.ok = false
 			return {}, .Invalid_Table_Offset
 		}
 		gdef.glyph_class_def = cast(^OpenType_Class_Definition_Table)&gdef_data[gdef_offset]
@@ -224,7 +229,7 @@ load_gdef_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	if gdef.header.attachment_list_offset > 0 {
 		attach_offset := uint(gdef.header.attachment_list_offset)
 		if bounds_check(attach_offset + 4 > uint(len(gdef_data))) {
-			free(gdef)
+			ctx.ok = false
 			return {}, .Invalid_Table_Offset
 		}
 		gdef.attachment_list = cast(^OpenType_Attachment_List_Table)&gdef_data[attach_offset]
@@ -234,7 +239,7 @@ load_gdef_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	if gdef.header.ligature_caret_list_offset > 0 {
 		lig_offset := uint(gdef.header.ligature_caret_list_offset)
 		if bounds_check(lig_offset + 4 > uint(len(gdef_data))) {
-			free(gdef)
+			ctx.ok = false
 			return {}, .Invalid_Table_Offset
 		}
 		gdef.ligature_caret_list = cast(^OpenType_Ligature_Caret_List)&gdef_data[lig_offset]
@@ -244,7 +249,7 @@ load_gdef_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	if gdef.header.mark_attach_class_def_offset > 0 {
 		mark_offset := uint(gdef.header.mark_attach_class_def_offset)
 		if bounds_check(mark_offset + 2 > uint(len(gdef_data))) {
-			free(gdef)
+			ctx.ok = false
 			return {}, .Invalid_Table_Offset
 		}
 		gdef.mark_attach_class = cast(^OpenType_Class_Definition_Table)&gdef_data[mark_offset]
@@ -255,7 +260,7 @@ load_gdef_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	   gdef.header.mark_glyph_sets_def_offset > 0 {
 		mark_sets_offset := uint(gdef.header.mark_glyph_sets_def_offset)
 		if bounds_check(mark_sets_offset + 4 > uint(len(gdef_data))) {
-			free(gdef)
+			ctx.ok = false
 			return {}, .Invalid_Table_Offset
 		}
 		gdef.mark_glyph_sets = cast(^OpenType_Mark_Glyph_Sets_Def)&gdef_data[mark_sets_offset]
@@ -265,17 +270,12 @@ load_gdef_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	if version == .Version_1_3 && gdef.header.item_var_store_offset > 0 {
 		var_store_offset := uint(gdef.header.item_var_store_offset)
 		if bounds_check(var_store_offset + 2 > uint(len(gdef_data))) {
-			free(gdef)
+			ctx.ok = false
 			return {}, .Invalid_Table_Offset
 		}
 		gdef.item_var_store = cast(^OpenType_Item_Var_Store)&gdef_data[var_store_offset]
 	}
 
-	return Table_Entry{data = gdef, destroy = destroy_gdef_table}, .None
+	return Table_Entry{data = gdef}, .None
 }
 
-destroy_gdef_table :: proc(tbl: rawptr) {
-	if tbl == nil {return}
-	gdef := cast(^GDEF_Table)tbl
-	free(gdef)
-}

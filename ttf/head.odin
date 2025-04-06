@@ -67,40 +67,41 @@ Mac_Style :: bit_field u16be {
 
 // Load the head table
 load_head_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	head_data, ok := get_table_data(font, .head)
-	if !ok {return {}, .Table_Not_Found}
+	if !ok {
+		ctx.ok = false
+		return {}, .Table_Not_Found
+	}
 
 	// Check minimum size for header
 	if len(head_data) < size_of(OpenType_Head_Table) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
 	// Create new head table structure
-	head := new(OpenType_Head_Table)
+	head := new(OpenType_Head_Table, font.allocator)
 	head^ = (cast(^OpenType_Head_Table)&head_data[0])^
 
 	// Validate magic number
 	// magic_number must be 0x5F0F3CF5
 	magic := u32(head.magic_number)
 	if magic != 0x5F0F3CF5 {
-		free(head)
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
 	// Validate version
 	version := transmute(u32be)head.version
 	if u32(version) != 0x00010000 {
-		free(head)
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
-	return Table_Entry{data = head, destroy = destroy_head_table}, .None
-}
-
-destroy_head_table :: proc(data: rawptr) {
-	if data == nil {return}
-	head := cast(^OpenType_Head_Table)data
-	free(head)
+	return Table_Entry{data = head}, .None
 }
 
 // Head table version

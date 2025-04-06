@@ -329,13 +329,18 @@ OpenType_OS2_Table_V2_Plus :: struct #packed {
 import "core:fmt"
 
 load_os2_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	os2_data, ok := get_table_data(font, .OS2)
 	if !ok {
+		ctx.ok = false
 		return {}, .Table_Not_Found
 	}
 
 	// Check minimum size for the smallest version (version 0)
 	if len(os2_data) < size_of(OpenType_OS2_Table_V0) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
@@ -343,7 +348,7 @@ load_os2_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	version := cast(OS2_Version)read_u16(os2_data, 0)
 
 	// Create a new OS2_Table structure
-	os2 := new(OS2_Table)
+	os2 := new(OS2_Table, font.allocator)
 	os2.raw_data = os2_data
 	os2.tbl = transmute(^OpenType_OS2_Table)&os2_data[0]
 	os2.version = version
@@ -352,12 +357,12 @@ load_os2_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	switch version {
 	case .Version_0:
 		if len(os2_data) < size_of(OpenType_OS2_Table_V0) {
-			free(os2)
+			ctx.ok = false
 			return {}, .Invalid_Table_Format
 		}
 	case .Version_1:
 		if len(os2_data) < size_of(OpenType_OS2_Table_V1) {
-			free(os2)
+			ctx.ok = false
 			return {}, .Invalid_Table_Format
 		}
 	case .Version_2, .Version_3, .Version_4, .Version_5:
@@ -368,12 +373,12 @@ load_os2_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 		}
 
 		if len(os2_data) < min_size {
-			free(os2)
+			ctx.ok = false
 			return {}, .Invalid_Table_Format
 		}
 	case:
 		// Unknown version
-		free(os2)
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
@@ -381,13 +386,7 @@ load_os2_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	// expected size will just be garbage, but we'll check version before accessing them
 	os2.tbl = transmute(^OpenType_OS2_Table)&os2_data[0]
 
-	return Table_Entry{data = os2, destroy = destroy_os2_table}, .None
-}
-
-destroy_os2_table :: proc(data: rawptr) {
-	if data == nil {return}
-	os2 := cast(^OS2_Table)data
-	free(os2)
+	return Table_Entry{data = os2}, .None
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

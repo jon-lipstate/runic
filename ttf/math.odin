@@ -185,23 +185,30 @@ Math_Glyph_Part_Flags :: bit_field u16be {
 
 // Load the MATH table
 load_math_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	math_data, ok := get_table_data(font, .MATH)
-	if !ok {return {}, .Table_Not_Found}
+	if !ok {
+		ctx.ok = false
+		return {}, .Table_Not_Found
+	}
 
 	// Check minimum size for header
 	if len(math_data) < size_of(OpenType_Math_Header) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
 	// Allocate the table structure
-	math := new(OpenType_Math_Table)
+	math := new(OpenType_Math_Table, font.allocator)
 	math.raw_data = math_data
 	math.header = cast(^OpenType_Math_Header)&math_data[0]
 	math.font = font
 
 	// Validate header version
 	if math.header.major_version != 1 || math.header.minor_version != 0 {
-		free(math)
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
@@ -217,13 +224,7 @@ load_math_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	math.glyph_info_offset = uint(math.header.glyph_info_offset)
 	math.variants_offset = uint(math.header.variants_offset)
 
-	return Table_Entry{data = math, destroy = destroy_math_table}, .None
-}
-
-destroy_math_table :: proc(data: rawptr) {
-	if data == nil {return}
-	math := cast(^OpenType_Math_Table)data
-	free(math)
+	return Table_Entry{data = math}, .None
 }
 
 // Helper functions for accessing MATH table data

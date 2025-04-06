@@ -3,6 +3,7 @@ package ttf
 import "core:mem"
 import "core:log"
 import "base:intrinsics"
+import "base:runtime"
 
 Read_Context :: struct {
     ok: bool,
@@ -22,6 +23,20 @@ _read_fail :: proc(r: ^Reader, loc := #caller_location) {
     }
     r.ctx.ok = false
 }
+
+@(deferred_out=read_arena_context_cleanup_end)
+read_arena_context_cleanup_begin :: proc(ctx: ^Read_Context, arena: ^runtime.Arena) -> (^Read_Context, runtime.Arena_Temp) {
+	return ctx, runtime.arena_temp_begin(arena)
+
+}
+read_arena_context_cleanup_end :: proc(ctx: ^Read_Context, tmp: runtime.Arena_Temp) {
+    if ctx.ok {
+        runtime.arena_temp_ignore(tmp)
+    } else {
+        runtime.arena_temp_end(tmp)
+    }
+}
+
 
 read_bytes_copy :: proc(r: ^Reader, size: i64, ptr: rawptr, loc := #caller_location) -> (bool) #no_bounds_check {
     head, did_overflow := intrinsics.overflow_add(r.offset, size)

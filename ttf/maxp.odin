@@ -56,11 +56,18 @@ OpenType_Maxp_Table_V1_0 :: struct #packed {
 
 // Load the maxp table
 load_maxp_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	maxp_data, ok := get_table_data(font, .maxp)
-	if !ok {return {}, .Table_Not_Found}
+	if !ok {
+		ctx.ok = false
+		return {}, .Table_Not_Found
+	}
 
 	// Check minimum size for version field
 	if len(maxp_data) < 4 {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
@@ -68,7 +75,7 @@ load_maxp_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	version := cast(Maxp_Version)read_u32(maxp_data, 0)
 
 	// Create a new Maxp_Table structure
-	maxp := new(Maxp_Table)
+	maxp := new(Maxp_Table, font.allocator)
 	maxp.raw_data = maxp_data
 	maxp.version = version
 
@@ -76,31 +83,25 @@ load_maxp_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	switch version {
 	case .Version_0_5:
 		if len(maxp_data) < size_of(OpenType_Maxp_Table_V0_5) {
-			free(maxp)
+			ctx.ok = false
 			return {}, .Invalid_Table_Format
 		}
 		maxp.data.v0_5 = cast(^OpenType_Maxp_Table_V0_5)&maxp_data[0]
 
 	case .Version_1_0:
 		if len(maxp_data) < size_of(OpenType_Maxp_Table_V1_0) {
-			free(maxp)
+			ctx.ok = false
 			return {}, .Invalid_Table_Format
 		}
 		maxp.data.v1_0 = cast(^OpenType_Maxp_Table_V1_0)&maxp_data[0]
 
 	case:
 		// Unknown version
-		free(maxp)
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
-	return Table_Entry{data = maxp, destroy = destroy_maxp_table}, .None
-}
-
-destroy_maxp_table :: proc(data: rawptr) {
-	if data == nil {return}
-	maxp := cast(^Maxp_Table)data
-	free(maxp)
+	return Table_Entry{data = maxp}, .None
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

@@ -55,9 +55,9 @@ when ODIN_OS == .Windows {
 				continue
 			}
 
-			font, font_err := load_font_from_path(file)
+			font, font_err := load_font_from_path(file, context.allocator)
 			testing.expect(t, font_err == nil, file)
-			destroy_font(&font)
+			destroy_font(font)
 		}
 		log.infof("Tested: %v fonts", len(test_files))
 	}

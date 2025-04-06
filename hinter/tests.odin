@@ -3,6 +3,7 @@ package runic_hinter
 import "core:path/filepath"
 import "core:testing"
 import "core:slice"
+import "core:mem"
 import "core:os"
 import "../ttf"
 
@@ -63,15 +64,14 @@ when ODIN_OS == .Windows {
 			if slice.contains(FAILING_FONTS, file) {
 				continue
 			}
-			data, data_ok := os.read_entire_file(file, context.temp_allocator)
-			testing.expect(t, data_ok)
-
-			context.allocator = context.temp_allocator
-			font, font_err := ttf.load_font_from_data(data)
+			allocator := context.allocator
+			context.allocator = mem.panic_allocator()
+			font, font_err := ttf.load_font_from_path(file, allocator)
 			testing.expect(t, font_err == nil, file)
+			defer ttf.destroy_font(font)
 
 			// NOTE(lucas): we are not testing hintin the actual glyphs yet
-			hinter, hinter_ok := hinter_program_make(&font, 11, 96, context.allocator)
+			hinter, hinter_ok := hinter_program_make(font, 11, 96, allocator)
 			testing.expect(t, hinter_ok, file)
 
 			hinter_program_hint_glyph(hinter, 0, context.temp_allocator)

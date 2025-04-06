@@ -1908,7 +1908,6 @@ hinter_program_ttf_ins_shc :: proc(ctx: ^Hinter_Program_Execution_Context) {
 		ref_p = 0xFFFFFFFF
 	}
 
-	// TODO(lucas): verify this start, limit thing
 	start := u32(0)
 	limit := u32(0)
 	if contour != 0 {
@@ -2852,25 +2851,32 @@ hinter_program_load_font_wide_program :: proc(font: ^ttf.Font) -> (^Hinter_Font_
 		if ! ok {
 			return {}, .Missing_Required_Table
 		}
-		// NOTE(lucas): we should move this into a private arena
-		font_data := new(Hinter_Font_Wide_Data)
+		base_ptr, font_data, shared_instructions, err := memory.make_multi(
+			memory.Make_Multi(^Hinter_Font_Wide_Data) {},
+			memory.Make_Multi([][]byte) { len = int(maxp.data.v1_0.max_function_defs) },
+			f.allocator
+		)
+		if err != nil {
+			return {}, .Unknown
+		}
+
 		// NOTE(lucas): some fonts lie about their stack size and report a number too small
 		// just add 32 for safety
 		font_data.stack_size = i32(maxp.data.v1_0.max_stack_elements) + 32
 		font_data.zone_0_size = i32(maxp.data.v1_0.max_twilight_points)
 		font_data.storage_size = i32(maxp.data.v1_0.max_storage)
-		// NOTE(lucas): we should move this into a private arena
-		font_data.shared_instructions = make([][]byte, maxp.data.v1_0.max_function_defs)
+		font_data.shared_instructions = shared_instructions
 		
+		scratch := memory.arena_scratch({})
 		program: Hinter_Program	
 		program.shared_intructions = font_data.shared_instructions
-		program.stack_data = make([]i32, font_data.stack_size, context.temp_allocator)
+		program.stack_data = make([]i32, font_data.stack_size, scratch)
 
 		fpgm, _ := ttf.get_table_data(f, .fpgm)
 
 		program_ctx := hinter_program_context_make(&program, .font, false, false, fpgm, {})
 		font_data.bad_font_program = ! hinter_program_ttf_execute(&program_ctx)
-		return { font_data, nil }, nil
+		return { font_data }, nil
 	}
 	return ttf.get_table(font, .fpgm, _load, Hinter_Font_Wide_Data)
 }

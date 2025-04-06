@@ -30,25 +30,31 @@ Loca_Format :: enum u16 {
 
 // Load the loca table
 load_loca_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	loca_data, ok := get_table_data(font, .loca)
 	if !ok {
+		ctx.ok = false
 		return {}, .Table_Not_Found
 	}
 
 	// We need the head table to determine the format
 	head, ok_head := get_table(font, .head, load_head_table, OpenType_Head_Table)
 	if !ok_head {
+		ctx.ok = false
 		return {}, .Missing_Required_Table
 	}
 
 	// We need maxp to get numGlyphs
 	maxp, ok_maxp := get_table(font, .maxp, load_maxp_table, Maxp_Table)
 	if !ok_maxp {
+		ctx.ok = false
 		return {}, .Missing_Required_Table
 	}
 
 	// Create the loca table structure
-	loca := new(Loca_Table)
+	loca := new(Loca_Table, font.allocator)
 	loca.raw_data = loca_data
 	loca.font = font
 	loca.num_glyphs = get_num_glyphs(maxp)
@@ -65,32 +71,24 @@ load_loca_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	}
 
 	if uint(len(loca_data)) < expected_size {
-		free(loca)
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
 	// Verify that offsets are in ascending order
-	when ODIN_DEBUG {
-		prev_offset := uint(0)
-		for i := uint(0); i < expected_entries; i += 1 {
-			current_offset := get_offset_at(loca, Glyph(i))
+	prev_offset := uint(0)
+	for i := uint(0); i < expected_entries; i += 1 {
+		current_offset := get_offset_at(loca, Glyph(i))
 
-			if current_offset < prev_offset {
-				free(loca)
-				return {}, .Invalid_Table_Format
-			}
-
-			prev_offset = current_offset
+		if current_offset < prev_offset {
+			ctx.ok = false
+			return {}, .Invalid_Table_Format
 		}
+
+		prev_offset = current_offset
 	}
 
-	return Table_Entry{data = loca, destroy = destroy_loca_table}, .None
-}
-
-destroy_loca_table :: proc(data: rawptr) {
-	if data == nil {return}
-	loca := cast(^Loca_Table)data
-	free(loca)
+	return Table_Entry{data = loca}, .None
 }
 
 // Get the raw offset at a specific index in the loca table
