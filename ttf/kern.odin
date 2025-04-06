@@ -127,7 +127,7 @@ load_kern_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	if len(kern_data) < 4 {return {}, .Invalid_Table_Format}
 
 	// Create new kern table structure
-	kern := new(OpenType_Kern_Table)
+	kern := new(OpenType_Kern_Table, font.allocator)
 	kern.raw_data = kern_data
 	kern.version = read_u16be(kern_data, 0)
 	kern.num_tables = read_u16be(kern_data, 2)
@@ -138,13 +138,7 @@ load_kern_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 		kern.subtables_offset = 8 // Version 1 header is 8 bytes (includes a fixed field)
 	}
 
-	return Table_Entry{data = kern, destroy = destroy_kern_table}, .None
-}
-
-destroy_kern_table :: proc(data: rawptr) {
-	if data == nil {return}
-	kern := cast(^OpenType_Kern_Table)data
-	free(kern)
+	return Table_Entry{data = kern}, .None
 }
 
 // Get the next subtable offset

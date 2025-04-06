@@ -1,6 +1,8 @@
 package ttf
 
-// FIXME: this file is not reviewed or edited; fair # of makes; likely slop
+import "base:runtime"
+
+// FIXME: this file is not reviewed or edited; likely slop
 
 // https://docs.microsoft.com/en-us/typography/opentype/spec/base
 // BASE — Baseline Table
@@ -122,14 +124,13 @@ load_base_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	}
 
 	// Allocate the table structure
-	base := new(OpenType_Base_Table)
+	base := new(OpenType_Base_Table, font.allocator)
 	base.raw_data = base_data
 	base.header = cast(^OpenType_Base_Header)&base_data[0]
 	base.font = font
 
 	// Check version - we support 1.0 and 1.1
 	if (base.header.major_version != 1) || (base.header.minor_version > 1) {
-		free(base)
 		return {}, .Invalid_Table_Format
 	}
 
@@ -149,13 +150,7 @@ load_base_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 		}
 	}
 
-	return Table_Entry{data = base, destroy = destroy_base_table}, .None
-}
-
-destroy_base_table :: proc(data: rawptr) {
-	if data == nil {return}
-	base := cast(^OpenType_Base_Table)data
-	free(base)
+	return Table_Entry{data = base}, .None
 }
 
 // Helper to read baseline values for a specific script
@@ -163,6 +158,7 @@ get_script_baseline_values :: proc(
 	base_table: ^OpenType_Base_Table,
 	script_tag: string,
 	is_vertical: bool,
+	allocator: runtime.Allocator,
 ) -> (
 	baseline_tags: []Tag,
 	baseline_values: []i16,
@@ -270,7 +266,7 @@ get_script_baseline_values :: proc(
 	}
 
 	// Read coordinate values
-	baseline_values_array := make([]i16, coords_count)
+	baseline_values_array := make([]i16, coords_count, allocator)
 	for i: uint = 0; i < uint(coords_count); i += 1 {
 		coord_offset_pos := values_offset + 4 + i * 2
 		if bounds_check(coord_offset_pos + 2 > uint(len(base_table.raw_data))) {
@@ -297,11 +293,12 @@ get_default_baseline :: proc(
 	base_table: ^OpenType_Base_Table,
 	script_tag: string,
 	is_vertical: bool,
+	allocator: runtime.Allocator,
 ) -> (
 	baseline_value: i16,
 	found: bool,
 ) {
-	_, values, default_index, ok := get_script_baseline_values(base_table, script_tag, is_vertical)
+	_, values, default_index, ok := get_script_baseline_values(base_table, script_tag, is_vertical, allocator)
 	if !ok || len(values) == 0 || int(default_index) >= len(values) {
 		return 0, false
 	}
@@ -426,6 +423,7 @@ get_script_extents :: proc(
 get_supported_baseline_scripts :: proc(
 	base_table: ^OpenType_Base_Table,
 	is_vertical: bool,
+	allocator: runtime.Allocator,
 ) -> (
 	script_tags: []string,
 	found: bool,
@@ -465,7 +463,7 @@ get_supported_baseline_scripts :: proc(
 	}
 
 	// Read script tags
-	tags := make([]string, script_count)
+	tags := make([]string, script_count, allocator)
 	for i: uint = 0; i < uint(script_count); i += 1 {
 		record_offset := script_list_offset + 2 + i * 6
 		if bounds_check(record_offset + 4 > uint(len(base_table.raw_data))) {
@@ -485,6 +483,7 @@ get_supported_baseline_scripts :: proc(
 get_baseline_tags :: proc(
 	base_table: ^OpenType_Base_Table,
 	is_vertical: bool,
+	allocator: runtime.Allocator,
 ) -> (
 	baseline_tags: []string,
 	found: bool,
@@ -524,7 +523,7 @@ get_baseline_tags :: proc(
 	}
 
 	// Read tags
-	tags := make([]string, tag_count)
+	tags := make([]string, tag_count, allocator)
 	for i: uint = 0; i < uint(tag_count); i += 1 {
 		tag_offset := tag_list_offset + 2 + i * 4
 		if bounds_check(tag_offset + 4 > uint(len(base_table.raw_data))) {
@@ -583,13 +582,14 @@ calculate_baseline_offset :: proc(
 	from_script: string,
 	to_script: string,
 	is_vertical: bool,
+	allocator: runtime.Allocator,
 ) -> (
 	offset: i16,
 	found: bool,
 ) {
 	// Get default baseline values for both scripts
-	from_value, from_ok := get_default_baseline(base_table, from_script, is_vertical)
-	to_value, to_ok := get_default_baseline(base_table, to_script, is_vertical)
+	from_value, from_ok := get_default_baseline(base_table, from_script, is_vertical, allocator)
+	to_value, to_ok := get_default_baseline(base_table, to_script, is_vertical, allocator)
 
 	if !from_ok || !to_ok {
 		return 0, false

@@ -31,16 +31,14 @@ load_hhea_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	}
 
 	// The table is a fixed size, so we can just cast the pointer
-	hhea := new(OpenType_Hhea_Table)
-	hhea^ = (cast(^OpenType_Hhea_Table)&hhea_data[0])^
+	hhea := (cast(^OpenType_Hhea_Table)&hhea_data[0])
 
-	return Table_Entry{data = hhea, destroy = destroy_hhea_table}, .None
+	return Table_Entry{data = hhea}, .None
 }
 
 destroy_hhea_table :: proc(data: rawptr) {
 	if data == nil {return}
 	hhea := cast(^OpenType_Hhea_Table)data
-	free(hhea)
 }
 //////////////////////////////////////////////////////////////////////////////////////////
 get_ascender :: proc(hhea: ^OpenType_Hhea_Table) -> i16 {

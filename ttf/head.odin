@@ -76,31 +76,23 @@ load_head_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	}
 
 	// Create new head table structure
-	head := new(OpenType_Head_Table)
+	head := new(OpenType_Head_Table, font.allocator)
 	head^ = (cast(^OpenType_Head_Table)&head_data[0])^
 
 	// Validate magic number
 	// magic_number must be 0x5F0F3CF5
 	magic := u32(head.magic_number)
 	if magic != 0x5F0F3CF5 {
-		free(head)
 		return {}, .Invalid_Table_Format
 	}
 
 	// Validate version
 	version := transmute(u32be)head.version
 	if u32(version) != 0x00010000 {
-		free(head)
 		return {}, .Invalid_Table_Format
 	}
 
-	return Table_Entry{data = head, destroy = destroy_head_table}, .None
-}
-
-destroy_head_table :: proc(data: rawptr) {
-	if data == nil {return}
-	head := cast(^OpenType_Head_Table)data
-	free(head)
+	return Table_Entry{data = head}, .None
 }
 
 // Head table version

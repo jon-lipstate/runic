@@ -126,17 +126,11 @@ load_glyf_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	if !has_loca {return {}, .Missing_Required_Table}
 
 	// Create the glyf table structure
-	glyf := new(Glyf_Table)
+	glyf := new(Glyf_Table, font.allocator)
 	glyf.data = glyf_data
 	glyf.loca = loca
 
-	return Table_Entry{data = glyf, destroy = destroy_glyf_table}, .None
-}
-
-destroy_glyf_table :: proc(data: rawptr) {
-	if data == nil {return}
-	glyf := cast(^Glyf_Table)data
-	free(glyf)
+	return Table_Entry{data = glyf}, .None
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////

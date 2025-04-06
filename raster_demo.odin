@@ -74,14 +74,14 @@ main :: proc() {
 
 	// Load and register a font
 	font_path := "./segoeui.ttf"
-	font, err := ttf.load_font(font_path)
+	font, err := ttf.load_font(font_path, context.allocator)
 	if err != .None {
 		fmt.eprintln("Error loading font:", err)
 		return
 	}
 	// defer ttf.destroy_font(&font) // <- the engine will delete them; maybe dont do that...
 
-	font_id, ok := shaper.register_font(engine, &font)
+	font_id, ok := shaper.register_font(engine, font)
 	if !ok {
 		fmt.eprintln("Error registering font")
 		return
@@ -93,7 +93,7 @@ main :: proc() {
 
 	// test_specific_glyphs(&font)
 
-	test_text_rendering(engine, font_id, &font)
+	test_text_rendering(engine, font_id, font)
 	// fmt.printf("Memory After test_text_rendering %v KiB\n", track.total_memory_allocated / 1024)
 
 }

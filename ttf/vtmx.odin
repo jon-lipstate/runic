@@ -36,7 +36,7 @@ load_vmtx_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	if !ok_vhea {return {}, .Missing_Required_Table}
 
 	// Allocate the vmtx table structure
-	vmtx := new(OpenType_Vmtx_Table)
+	vmtx := new(OpenType_Vmtx_Table, font.allocator)
 	vmtx.raw_data = vmtx_data
 	vmtx.num_glyphs = font.num_glyphs
 	vmtx.num_of_long_metrics = get_number_of_v_metrics(vhea)
@@ -50,7 +50,6 @@ load_vmtx_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 
 	if len(vmtx_data) < min_size {
 		fmt.println("vmtx too small for data")
-		free(vmtx)
 		return {}, .Invalid_Table_Format
 	}
 
@@ -64,13 +63,7 @@ load_vmtx_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 		vmtx.top_side_bearings = tsb_ptr[:vmtx.num_glyphs - vmtx.num_of_long_metrics]
 	}
 
-	return Table_Entry{data = vmtx, destroy = destroy_vmtx_table}, .None
-}
-
-destroy_vmtx_table :: proc(data: rawptr) {
-	if data == nil {return}
-	vmtx := cast(^OpenType_Vmtx_Table)data
-	free(vmtx)
+	return Table_Entry{data = vmtx}, .None
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////

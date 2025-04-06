@@ -48,7 +48,7 @@ load_loca_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	}
 
 	// Create the loca table structure
-	loca := new(Loca_Table)
+	loca := new(Loca_Table, font.allocator)
 	loca.raw_data = loca_data
 	loca.font = font
 	loca.num_glyphs = get_num_glyphs(maxp)
@@ -65,7 +65,6 @@ load_loca_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	}
 
 	if uint(len(loca_data)) < expected_size {
-		free(loca)
 		return {}, .Invalid_Table_Format
 	}
 
@@ -76,7 +75,6 @@ load_loca_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 			current_offset := get_offset_at(loca, Glyph(i))
 
 			if current_offset < prev_offset {
-				free(loca)
 				return {}, .Invalid_Table_Format
 			}
 
@@ -84,13 +82,7 @@ load_loca_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 		}
 	}
 
-	return Table_Entry{data = loca, destroy = destroy_loca_table}, .None
-}
-
-destroy_loca_table :: proc(data: rawptr) {
-	if data == nil {return}
-	loca := cast(^Loca_Table)data
-	free(loca)
+	return Table_Entry{data = loca}, .None
 }
 
 // Get the raw offset at a specific index in the loca table

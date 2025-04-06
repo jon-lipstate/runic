@@ -36,7 +36,7 @@ load_hmtx_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	if !ok_hhea {return {}, .Missing_Required_Table}
 
 	// Allocate the hmtx table structure
-	hmtx := new(OpenType_Hmtx_Table)
+	hmtx := new(OpenType_Hmtx_Table, font.allocator)
 	hmtx.raw_data = hmtx_data
 	hmtx.num_glyphs = font.num_glyphs
 	hmtx.num_of_long_metrics = u16(hhea.number_of_h_metrics)
@@ -50,7 +50,6 @@ load_hmtx_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 
 	if len(hmtx_data) < min_size {
 		fmt.println("htmx too small for data")
-		free(hmtx)
 		return {}, .Invalid_Table_Format
 	}
 
@@ -64,13 +63,7 @@ load_hmtx_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 		hmtx.left_side_bearings = lsb_ptr[:hmtx.num_glyphs - hmtx.num_of_long_metrics]
 	}
 
-	return Table_Entry{data = hmtx, destroy = destroy_hmtx_table}, .None
-}
-
-destroy_hmtx_table :: proc(data: rawptr) {
-	if data == nil {return}
-	hmtx := cast(^OpenType_Hmtx_Table)data
-	free(hmtx)
+	return Table_Entry{data = hmtx}, .None
 }
 //////////////////////////////////////////////////////////////////////////////////////////
 

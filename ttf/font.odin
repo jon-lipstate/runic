@@ -3,6 +3,7 @@ package ttf
 import "core:testing"
 import "core:reflect"
 import "core:fmt"
+import "base:runtime"
 
 Glyph :: distinct u16
 
@@ -126,25 +127,30 @@ Table_Blob :: struct {
 
 	has_user_data: bool,
 	user_data:    rawptr,
-	destroy: proc(ref: rawptr),
 }
 
 Font :: struct {
 	// Public
-	filepath:     string,
-	units_per_em: u16,
-	num_glyphs:   u16,
-	features:     Font_Features,
+	units_per_em:  u16,
+	num_glyphs:    u16,
+	features:      Font_Features,
 
 	// Internal Use Only
-	_data:        []byte,
-	_has_tables: Table_Tags,
-	_tables: [Table_Tag]Table_Blob,
+	_data:         []byte,
+	_has_tables:   Table_Tags,
+	_tables:       [Table_Tag]Table_Blob,
+
+	allocator: runtime.Allocator,
+	arena: runtime.Arena,
+}
+
+Font_Load_Options :: struct {
+	arena_size: int,
+	copy_data: bool,
 }
 
 Table_Entry :: struct {
 	data:    rawptr,
-	destroy: proc(ref: rawptr),
 }
 
 Font_Error :: enum {

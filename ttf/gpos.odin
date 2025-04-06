@@ -677,14 +677,13 @@ load_gpos_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	}
 
 	// Allocate the table structure
-	gpos := new(GPOS_Table)
+	gpos := new(GPOS_Table, font.allocator)
 	gpos.raw_data = gpos_data
 	gpos.header = cast(^OpenType_GPOS_Header)&gpos_data[0]
 
 	// Validate and load script list
 	script_list_offset := uint(gpos.header.script_list_offset)
 	if script_list_offset >= uint(len(gpos_data)) {
-		free(gpos)
 		return {}, .Invalid_Table_Offset
 	}
 	gpos.script_list = cast(^OpenType_Script_List)&gpos_data[script_list_offset]
@@ -692,7 +691,6 @@ load_gpos_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	// Validate and load feature list
 	feature_list_offset := uint(gpos.header.feature_list_offset)
 	if feature_list_offset >= uint(len(gpos_data)) {
-		free(gpos)
 		return {}, .Invalid_Table_Offset
 	}
 	gpos.feature_list = cast(^OpenType_Feature_List)&gpos_data[feature_list_offset]
@@ -700,7 +698,6 @@ load_gpos_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	// Validate and load lookup list
 	lookup_list_offset := uint(gpos.header.lookup_list_offset)
 	if lookup_list_offset >= uint(len(gpos_data)) {
-		free(gpos)
 		return {}, .Invalid_Table_Offset
 	}
 	gpos.lookup_list = cast(^OpenType_Lookup_List)&gpos_data[lookup_list_offset]
@@ -714,13 +711,7 @@ load_gpos_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 		}
 	}
 
-	return Table_Entry{data = gpos, destroy = destroy_gpos_table}, .None
-}
-
-destroy_gpos_table :: proc(tbl: rawptr) {
-	if tbl == nil {return}
-	gpos := cast(^GPOS_Table)tbl
-	free(gpos)
+	return Table_Entry{data = gpos}, .None
 }
 
 // Get value record size based on format flags

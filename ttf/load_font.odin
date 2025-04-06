@@ -1,30 +1,36 @@
 package ttf
 
 // #+feature custom-attribute @(api) TODO: propose to bill rather than build arg
+import "base:runtime"
 import "base:intrinsics"
 import "core:os"
 import "core:log"
 import "core:slice"
 import "core:strings"
+import "../memory"
+
+LOAD_ARENA_MUL_SIZE :: 3
 
 load_font :: proc {
 	load_font_from_path,
 	load_font_from_data,
 }
 
-load_font_from_path :: proc(filepath: string) -> (Font, Font_Error) {
-	data, ok := os.read_entire_file(filepath)
-	if !ok {
-		return {}, .File_Not_Found
-	}
-	font, err := load_font_from_data(data)
-	font.filepath = filepath
-	return font, err
-}
-
-
-load_font_from_data :: proc(data: []byte) -> (font: Font, err: Font_Error) {
+@(private)
+_load_font_from_data :: proc(data: []byte, arena: runtime.Arena, options: Font_Load_Options) -> (^Font, Font_Error) {
+	arena := arena
 	ctx: Read_Context = { ok = true }
+	defer if ! ctx.ok {
+		runtime.arena_destroy(&arena)
+	}
+
+	font, result_err := new(Font, runtime.arena_allocator(&arena))
+	if result_err != nil {
+		return {}, .Unknown
+	}	
+	font.arena = arena
+	font.allocator = runtime.arena_allocator(&font.arena)
+
 	// NOTE(lucas): ingest all tables
 	{
 		reader := Reader { &ctx, data, 0 }
@@ -41,32 +47,32 @@ load_font_from_data :: proc(data: []byte) -> (font: Font, err: Font_Error) {
 			} else {
 				table_data, table_ok := get_table_from_directory(&ctx, i64(table.offset), i64(table.length), data)
 				font._has_tables += { tag }
-				font._tables[tag] = { tag, u32(table.check_sum), table_data, true, false, nil, nil }
+				font._tables[tag] = { tag, u32(table.check_sum), table_data, true, false, nil }
 			}
 		}
 	}
 	// NOTE(lucas): verify features
-    for tag in font._has_tables {
-        if tag == .unknown {
-            continue
-        }
+	for tag in font._has_tables {
+	if tag == .unknown {
+		continue
+	}
 
-        parsed_info := font._tables[tag]
-        if ! parsed_info.valid {
-            ctx.ok = false
-        }
+	parsed_info := font._tables[tag]
+	if ! parsed_info.valid {
+		ctx.ok = false
+	}
 		bad_checksum := false
-        if tag == .head {
-            checksum := table_check_sum(data)
-            bad_checksum = 0xB1B0AFBA - checksum != 0
-        } else {
-            bad_checksum = u32(table_check_sum(parsed_info.data)) != parsed_info.check_sum
-        }
+	if tag == .head {
+		checksum := table_check_sum(data)
+		bad_checksum = 0xB1B0AFBA - checksum != 0
+	} else {
+		bad_checksum = u32(table_check_sum(parsed_info.data)) != parsed_info.check_sum
+	}
 		if bad_checksum {
 			log.errorf("[Ttf parser] table %v has a bad checksum", tag)
 			ctx.ok = false
 		}
-    }
+	}
 
 	if ! ctx.ok {
 		return {}, .Unknown
@@ -74,28 +80,65 @@ load_font_from_data :: proc(data: []byte) -> (font: Font, err: Font_Error) {
 
 	font._data = data
 
-	detect_features(&font)
-	extract_basic_metadata(&font)
+	detect_features(font)
+	extract_basic_metadata(font)
 
 	return font, .None
 }
 
+load_font_from_path :: proc(filepath: string, allocator: runtime.Allocator, options: Font_Load_Options = {}) -> (^Font, Font_Error) {
+	scratch := memory.arena_scratch({ allocator })
+	context.temp_allocator = scratch
+
+	arena: runtime.Arena
+	size := options.arena_size <= 0 ? uint(os.file_size_from_path(filepath) * (LOAD_ARENA_MUL_SIZE + 1)) : uint(options.arena_size)
+	arena_err := runtime.arena_init(&arena, size, allocator)
+	if arena_err != nil {
+		return {}, .Unknown
+	}
+
+	data, ok := os.read_entire_file(filepath, runtime.arena_allocator(&arena))
+	if ! ok {
+		return {}, .Unknown
+	}
+	return _load_font_from_data(data, arena, options)
+}
+
+load_font_from_data :: proc(data: []byte, allocator: runtime.Allocator, options: Font_Load_Options = {}) -> (^Font, Font_Error) {
+	data := data
+
+	arena: runtime.Arena	
+	arena_size := options.arena_size
+	if arena_size <= 0 {
+		arena_size = len(data) * LOAD_ARENA_MUL_SIZE
+		if options.copy_data {
+			arena_size += LOAD_ARENA_MUL_SIZE
+		}
+	}
+	arena_err := runtime.arena_init(&arena, uint(arena_size), allocator)
+	if arena_err != nil {
+		return {}, .Unknown
+	}
+	if options.copy_data {
+		data = slice.clone(data, runtime.arena_allocator(&arena))
+	}
+	return _load_font_from_data(data, arena, options)
+}
+
 table_check_sum :: proc(data: []byte) -> u32be {
-    sum: u32be
-    data_len := len(data)
-    for i := 0; i < data_len; i += 4 {
-        sum += (cast(^u32be)(&data[i]))^
-    }
-    return sum
+	sum: u32be
+	data_len := len(data)
+	for i := 0; i < data_len; i += 4 {
+	sum += (cast(^u32be)(&data[i]))^
+	}
+	return sum
 }
 
 destroy_font :: proc(font: ^Font) {
-	for entry in font._tables {
-		if entry.destroy != nil {
-			entry.destroy(entry.user_data)
-		}
+	if font != nil {
+		arena := font.arena
+		runtime.arena_destroy(&arena)
 	}
-	delete(font._data)
 }
 
 // Extract the slice of that table from `_tables`
@@ -119,12 +162,12 @@ extract_basic_metadata :: proc(font: ^Font) -> Font_Error {
 
 	// Get num glyphs from 'maxp' table
 	maxp_data, m_ok := get_table_data(font, .maxp)
-	if !m_ok || len(maxp_data) < 6 {return .Missing_Required_Table} 	// maxp table is required 
+	if !m_ok || len(maxp_data) < 6 {return .Missing_Required_Table}		// maxp table is required 
 
 	ng_offset := transmute(^u16)&maxp_data[4]
 	font.num_glyphs = be_to_host_u16(ng_offset^)
 
-	if font.num_glyphs == 0 {return .Invalid_Font_Format} 	// A valid font must have at least one glyph
+	if font.num_glyphs == 0 {return .Invalid_Font_Format}	// A valid font must have at least one glyph
 
 	return .None
 }

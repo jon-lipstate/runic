@@ -55,7 +55,7 @@ load_vhea_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	}
 
 	// Create a new Vhea_Table structure
-	vhea := new(Vhea_Table)
+	vhea := new(Vhea_Table, font.allocator)
 	vhea.raw_data = vhea_data
 	vhea.data = cast(^OpenType_Vhea_Table)&vhea_data[0]
 
@@ -67,17 +67,10 @@ load_vhea_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 		vhea.version = .Version_1_1
 	} else {
 		// Unknown version
-		free(vhea)
 		return {}, .Invalid_Table_Format
 	}
 
-	return Table_Entry{data = vhea, destroy = destroy_vhea_table}, .None
-}
-
-destroy_vhea_table :: proc(data: rawptr) {
-	if data == nil {return}
-	vhea := cast(^Vhea_Table)data
-	free(vhea)
+	return Table_Entry{data = vhea}, .None
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
