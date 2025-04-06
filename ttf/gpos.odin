@@ -666,13 +666,18 @@ OpenType_Pos_Lookup_Record :: struct #packed {
 
 // Load the GPOS table
 load_gpos_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	gpos_data, ok := get_table_data(font, .GPOS)
 	if !ok {
+		ctx.ok = false
 		return {}, .Table_Not_Found
 	}
 
 	// Check minimum size for header
 	if len(gpos_data) < size_of(OpenType_GPOS_Header) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
@@ -684,6 +689,7 @@ load_gpos_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	// Validate and load script list
 	script_list_offset := uint(gpos.header.script_list_offset)
 	if script_list_offset >= uint(len(gpos_data)) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Offset
 	}
 	gpos.script_list = cast(^OpenType_Script_List)&gpos_data[script_list_offset]
@@ -691,6 +697,7 @@ load_gpos_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	// Validate and load feature list
 	feature_list_offset := uint(gpos.header.feature_list_offset)
 	if feature_list_offset >= uint(len(gpos_data)) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Offset
 	}
 	gpos.feature_list = cast(^OpenType_Feature_List)&gpos_data[feature_list_offset]
@@ -698,6 +705,7 @@ load_gpos_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	// Validate and load lookup list
 	lookup_list_offset := uint(gpos.header.lookup_list_offset)
 	if lookup_list_offset >= uint(len(gpos_data)) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Offset
 	}
 	gpos.lookup_list = cast(^OpenType_Lookup_List)&gpos_data[lookup_list_offset]

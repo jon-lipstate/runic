@@ -198,8 +198,12 @@ Nondefault_UVS_Mapping :: struct {
 	glyph_id: Glyph,
 }
 load_cmap_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	cmap_data, ok := get_table_data(font, .cmap)
 	if !ok || len(cmap_data) < 4 {
+		ctx.ok = false
 		return {}, .Missing_Required_Table
 	}
 
@@ -214,6 +218,7 @@ load_cmap_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 
 	// Check if data is valid
 	if num_tables <= 0 || bounds_check(len(cmap_data) < 4 + int(num_tables) * 8) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
@@ -256,31 +261,31 @@ load_cmap_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 
 		switch cmap.subtables[i].format {
 		case .Byte_Encoding:
-			parse_cmap_format0(cmap_data, subtable_offset, &cmap.subtables[i], font.allocator)
+			parse_cmap_format0(cmap_data, subtable_offset, &cmap.subtables[i], font)
 
 		case .High_Byte_Mapping:
-			parse_cmap_format2(cmap_data, subtable_offset, &cmap.subtables[i], font.allocator)
+			parse_cmap_format2(cmap_data, subtable_offset, &cmap.subtables[i], font)
 
 		case .Segment_Mapping:
-			parse_cmap_format4(cmap_data, subtable_offset, &cmap.subtables[i], font.allocator)
+			parse_cmap_format4(cmap_data, subtable_offset, &cmap.subtables[i], font)
 
 		case .Trimmed_Table:
-			parse_cmap_format6(cmap_data, subtable_offset, &cmap.subtables[i], font.allocator)
+			parse_cmap_format6(cmap_data, subtable_offset, &cmap.subtables[i], font)
 
 		case .Mixed_Coverage:
-			parse_cmap_format8(cmap_data, subtable_offset, &cmap.subtables[i], font.allocator)
+			parse_cmap_format8(cmap_data, subtable_offset, &cmap.subtables[i], font)
 
 		case .Trimmed_Array:
-			parse_cmap_format10(cmap_data, subtable_offset, &cmap.subtables[i], font.allocator)
+			parse_cmap_format10(cmap_data, subtable_offset, &cmap.subtables[i], font)
 
 		case .Segmented_Coverage:
-			parse_cmap_format12(cmap_data, subtable_offset, &cmap.subtables[i], font.allocator)
+			parse_cmap_format12(cmap_data, subtable_offset, &cmap.subtables[i], font)
 
 		case .Many_To_One_Mapping:
-			parse_cmap_format13(cmap_data, subtable_offset, &cmap.subtables[i], font.allocator)
+			parse_cmap_format13(cmap_data, subtable_offset, &cmap.subtables[i], font)
 
 		case .Unicode_Variation_Seq:
-			parse_cmap_format14(cmap_data, subtable_offset, &cmap.subtables[i], font.allocator)
+			parse_cmap_format14(cmap_data, subtable_offset, &cmap.subtables[i], font)
 		}
 	}
 
@@ -319,10 +324,10 @@ parse_cmap_subtable_header :: proc(data: []byte, offset: uint, subtable: ^CMAP_S
 
 // Format 0: Byte encoding table
 @(private)
-parse_cmap_format0 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, allocator: runtime.Allocator) {
+parse_cmap_format0 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, font: ^Font) {
 	if bounds_check(offset + 6 + 256 > uint(len(data))) {return}
 
-	format0 := new(Format0, allocator) // Allocated (small struct)
+	format0 := new(Format0, font.allocator) // Allocated (small struct)
 	format0.glyph_ids_offset = offset + 6
 
 	subtable.data = format0
@@ -330,10 +335,10 @@ parse_cmap_format0 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable,
 
 // Format 2: High-byte mapping through table
 @(private)
-parse_cmap_format2 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, allocator: runtime.Allocator) {
+parse_cmap_format2 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, font: ^Font) {
 	if bounds_check(offset + 6 + 512 > uint(len(data))) {return}
 
-	format2 := new(Format2, allocator) // Allocated (small struct)
+	format2 := new(Format2, font.allocator) // Allocated (small struct)
 	format2.sub_header_keys_offset = offset + 6
 
 	// Find maximum subHeader index to determine count
@@ -358,7 +363,7 @@ parse_cmap_format2 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable,
 
 // Format 4: Segment mapping to delta values
 @(private)
-parse_cmap_format4 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, allocator: runtime.Allocator) {
+parse_cmap_format4 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, font: ^Font) {
 	if bounds_check(offset + 14 > uint(len(data))) {return}
 
 	seg_count_x2 := read_u16(data, offset + 6)
@@ -366,7 +371,7 @@ parse_cmap_format4 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable,
 
 	if seg_count <= 0 || bounds_check(offset + 14 + (seg_count * 8) + 2 > uint(len(data))) {return}
 
-	format4 := new(Format4, allocator) // Allocated (small struct)
+	format4 := new(Format4, font.allocator) // Allocated (small struct)
 	format4.segment_count = seg_count
 
 	// Calculate offsets to various arrays
@@ -385,10 +390,10 @@ parse_cmap_format4 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable,
 
 // Format 6: Trimmed table mapping
 @(private)
-parse_cmap_format6 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, allocator: runtime.Allocator) {
+parse_cmap_format6 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, font: ^Font) {
 	if bounds_check(offset + 10 > uint(len(data))) {return}
 
-	format6 := new(Format6, allocator) // Allocated (small struct)
+	format6 := new(Format6, font.allocator) // Allocated (small struct)
 	format6.first_code = read_u16(data, offset + 6)
 	format6.entry_count = read_u16(data, offset + 8)
 	format6.glyph_ids_offset = offset + 10
@@ -398,15 +403,22 @@ parse_cmap_format6 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable,
 
 // Format 8: Mixed 16-bit and 32-bit coverage
 @(private)
-parse_cmap_format8 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, allocator: runtime.Allocator) {
-	if bounds_check(offset + 16 + 8192 > uint(len(data))) {return}
+parse_cmap_format8 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, font: ^Font) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
 
-	format8 := new(Format8, allocator) // Allocated (small struct)
+	if bounds_check(offset + 16 + 8192 > uint(len(data))) {
+		ctx.ok = false
+		return
+	}
+
+	format8 := new(Format8, font.allocator) // Allocated (small struct)
 	format8.is_32_offset = offset + 16
 
 	// Parse num_groups
 	num_groups_offset := offset + 16 + 8192
 	if bounds_check(num_groups_offset + 4 > uint(len(data))) {
+		ctx.ok = false
 		return
 	}
 
@@ -415,6 +427,7 @@ parse_cmap_format8 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable,
 
 	// Verify we have enough data for the groups
 	if bounds_check(format8.groups_offset + uint(format8.num_groups) * 12 > uint(len(data))) {
+		ctx.ok = false
 		return
 	}
 
@@ -423,18 +436,23 @@ parse_cmap_format8 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable,
 
 // Format 10: Trimmed array
 @(private)
-parse_cmap_format10 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, allocator: runtime.Allocator) {
+parse_cmap_format10 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, font: ^Font) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	if bounds_check(offset + 20 > uint(len(data))) {
+		ctx.ok = false
 		return
 	}
 
-	format10 := new(Format10, allocator) // Allocated (small struct)
+	format10 := new(Format10, font.allocator) // Allocated (small struct)
 	format10.start_char_code = read_u32(data, offset + 12)
 	format10.num_chars = read_u32(data, offset + 16)
 	format10.glyphs_offset = offset + 20
 
 	// Verify we have enough data for all the glyph IDs
 	if bounds_check(format10.glyphs_offset + uint(format10.num_chars) * 2 > uint(len(data))) {
+		ctx.ok = false
 		return
 	}
 
@@ -443,15 +461,22 @@ parse_cmap_format10 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable
 
 // Format 12: Segmented coverage
 @(private)
-parse_cmap_format12 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, allocator: runtime.Allocator) {
-	if bounds_check(offset + 16 > uint(len(data))) {return}
+parse_cmap_format12 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, font: ^Font) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
 
-	format12 := new(Format12, allocator) // Allocated (small struct)
+	if bounds_check(offset + 16 > uint(len(data))) {
+		ctx.ok = false
+		return
+	}
+
+	format12 := new(Format12, font.allocator) // Allocated (small struct)
 	format12.num_groups = read_u32(data, offset + 12)
 	format12.groups_offset = offset + 16
 
 	// Verify we have enough data for all the groups
 	if bounds_check(format12.groups_offset + uint(format12.num_groups) * 12 > uint(len(data))) {
+		ctx.ok = false
 		return
 	}
 
@@ -460,15 +485,22 @@ parse_cmap_format12 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable
 
 // Format 13: Many-to-one mapping
 @(private)
-parse_cmap_format13 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, allocator: runtime.Allocator) {
-	if bounds_check(offset + 16 > uint(len(data))) {return}
+parse_cmap_format13 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, font: ^Font) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
 
-	format13 := new(Format13, allocator) // Allocated (small struct)
+	if bounds_check(offset + 16 > uint(len(data))) {
+		ctx.ok = false
+		return
+	}
+
+	format13 := new(Format13, font.allocator) // Allocated (small struct)
 	format13.num_groups = read_u32(data, offset + 12)
 	format13.groups_offset = offset + 16
 
 	// Verify we have enough data for all the groups
 	if bounds_check(format13.groups_offset + uint(format13.num_groups) * 12 > uint(len(data))) {
+		ctx.ok = false
 		return
 	}
 
@@ -477,18 +509,23 @@ parse_cmap_format13 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable
 
 // Format 14: Unicode Variation Sequences
 @(private)
-parse_cmap_format14 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, allocator: runtime.Allocator) {
+parse_cmap_format14 :: proc(data: []byte, offset: uint, subtable: ^CMAP_Subtable, font: ^Font) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	if bounds_check(offset + 10 > uint(len(data))) {
+		ctx.ok = false
 		return
 	}
 
-	format14 := new(Format14, allocator) // Allocated (small struct)
+	format14 := new(Format14, font.allocator) // Allocated (small struct)
 	format14.num_var_selectors = read_u32(data, offset + 6)
 	format14.var_selectors_offset = offset + 10
 	format14.offset = offset // Store the base offset for calculating absolute positions
 
 	// Verify we have enough data for all the variation selectors
 	if format14.var_selectors_offset + uint(format14.num_var_selectors) * 11 > uint(len(data)) {
+		ctx.ok = false
 		return
 	}
 

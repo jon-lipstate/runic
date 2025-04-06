@@ -329,13 +329,18 @@ OpenType_OS2_Table_V2_Plus :: struct #packed {
 import "core:fmt"
 
 load_os2_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	os2_data, ok := get_table_data(font, .OS2)
 	if !ok {
+		ctx.ok = false
 		return {}, .Table_Not_Found
 	}
 
 	// Check minimum size for the smallest version (version 0)
 	if len(os2_data) < size_of(OpenType_OS2_Table_V0) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
@@ -352,10 +357,12 @@ load_os2_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	switch version {
 	case .Version_0:
 		if len(os2_data) < size_of(OpenType_OS2_Table_V0) {
+			ctx.ok = false
 			return {}, .Invalid_Table_Format
 		}
 	case .Version_1:
 		if len(os2_data) < size_of(OpenType_OS2_Table_V1) {
+			ctx.ok = false
 			return {}, .Invalid_Table_Format
 		}
 	case .Version_2, .Version_3, .Version_4, .Version_5:
@@ -366,10 +373,12 @@ load_os2_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 		}
 
 		if len(os2_data) < min_size {
+			ctx.ok = false
 			return {}, .Invalid_Table_Format
 		}
 	case:
 		// Unknown version
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 

@@ -44,13 +44,18 @@ OpenType_Vhea_Table :: struct #packed {
 
 
 load_vhea_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	vhea_data, ok := get_table_data(font, .vhea)
 	if !ok {
+		ctx.ok = false
 		return {}, .Table_Not_Found
 	}
 
 	// Check minimum size for the vhea table
 	if len(vhea_data) < size_of(OpenType_Vhea_Table) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
@@ -67,6 +72,7 @@ load_vhea_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 		vhea.version = .Version_1_1
 	} else {
 		// Unknown version
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 

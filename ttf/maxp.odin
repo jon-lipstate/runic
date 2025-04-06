@@ -56,11 +56,18 @@ OpenType_Maxp_Table_V1_0 :: struct #packed {
 
 // Load the maxp table
 load_maxp_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	maxp_data, ok := get_table_data(font, .maxp)
-	if !ok {return {}, .Table_Not_Found}
+	if !ok {
+		ctx.ok = false
+		return {}, .Table_Not_Found
+	}
 
 	// Check minimum size for version field
 	if len(maxp_data) < 4 {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
@@ -76,18 +83,21 @@ load_maxp_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	switch version {
 	case .Version_0_5:
 		if len(maxp_data) < size_of(OpenType_Maxp_Table_V0_5) {
+			ctx.ok = false
 			return {}, .Invalid_Table_Format
 		}
 		maxp.data.v0_5 = cast(^OpenType_Maxp_Table_V0_5)&maxp_data[0]
 
 	case .Version_1_0:
 		if len(maxp_data) < size_of(OpenType_Maxp_Table_V1_0) {
+			ctx.ok = false
 			return {}, .Invalid_Table_Format
 		}
 		maxp.data.v1_0 = cast(^OpenType_Maxp_Table_V1_0)&maxp_data[0]
 
 	case:
 		// Unknown version
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 

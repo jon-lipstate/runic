@@ -113,13 +113,18 @@ OpenType_Base_Coord_Format3 :: struct #packed {
 
 // Load the BASE table
 load_base_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
+	ctx := Read_Context { ok = true }
+	read_arena_context_cleanup_begin(&ctx, &font.arena)
+
 	base_data, ok := get_table_data(font, .BASE)
 	if !ok {
+		ctx.ok = false
 		return {}, .Table_Not_Found
 	}
 
 	// Check minimum size for header
 	if len(base_data) < size_of(OpenType_Base_Header) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 
@@ -131,6 +136,7 @@ load_base_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 
 	// Check version - we support 1.0 and 1.1
 	if (base.header.major_version != 1) || (base.header.minor_version > 1) {
+		ctx.ok = false
 		return {}, .Invalid_Table_Format
 	}
 

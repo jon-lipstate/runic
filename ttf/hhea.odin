@@ -1,5 +1,7 @@
 package ttf
 
+import "base:runtime"
+
 // The hhea table is needed to parse hmtx properly
 OpenType_Hhea_Table :: struct {
 	version:                Fixed, // 0x00010000 (1.0)
