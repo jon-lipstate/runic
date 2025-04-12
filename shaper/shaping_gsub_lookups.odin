@@ -1,7 +1,6 @@
 package shaper
 
 import ttf "../ttf"
-import "core:fmt"
 
 // Apply standard lookup at a specific offset (for extension lookups)
 apply_standard_lookup_at_offset :: proc(
@@ -57,8 +56,8 @@ apply_gsub_lookups :: proc(gsub: ^ttf.GSUB_Table, lookup_indices: []u16, buffer:
 	// Process each lookup in order
 	for lookup_index in lookup_indices {
 		// Get lookup information
-		lookup_type, lookup_flags, lookup_offset, ok := ttf.get_lookup_info(gsub, lookup_index)
-		if !ok {continue}
+		lookup_type, lookup_flags, _, ok := ttf.get_lookup_info(gsub, lookup_index)
+		if !ok {continue} // TODO(Jeroen): Can this be replaced with `or_continue`?
 
 		// Save original flags and update with current lookup flags
 		saved_flags := buffer.flags

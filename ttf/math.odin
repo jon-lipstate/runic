@@ -253,7 +253,7 @@ get_math_value_record :: proc(
 		return {}
 	}
 
-	record := transmute(^OpenType_Math_Value_Record)&math.raw_data[offset]
+	record := (^OpenType_Math_Value_Record)(&math.raw_data[offset])
 	return record^
 }
 
@@ -333,7 +333,7 @@ get_math_variants :: proc(
 		return nil, nil, false
 	}
 
-	v_arr_ptr := transmute([^]OpenType_Math_Glyph_Variant)&math.raw_data[variants_offset]
+	v_arr_ptr := ([^]OpenType_Math_Glyph_Variant)(&math.raw_data[variants_offset])
 	variants_array := v_arr_ptr[:variant_count]
 
 	return variants_array, assembly_ptr, true
@@ -381,7 +381,7 @@ get_math_italic_correction :: proc(
 		return 0, false
 	}
 
-	value_record := transmute(^OpenType_Math_Value_Record)&math.raw_data[value_record_offset]
+	value_record := (^OpenType_Math_Value_Record)(&math.raw_data[value_record_offset])
 	return i16(value_record.value), true
 }
 
@@ -427,7 +427,7 @@ get_math_top_accent_attachment :: proc(
 		return 0, false
 	}
 
-	value_record := transmute(^OpenType_Math_Value_Record)&math.raw_data[value_record_offset]
+	value_record := (^OpenType_Math_Value_Record)(&math.raw_data[value_record_offset])
 	return i16(value_record.value), true
 }
 
@@ -537,7 +537,7 @@ get_all_math_kern_corners :: proc(
 		kerns_offset := kern_table_offset + 2 + uint(heights_count) * 4
 
 		// Create a slice directly into the raw data
-		k_arr_ptr := transmute([^]OpenType_Math_Value_Record)&math.raw_data[kerns_offset]
+		k_arr_ptr := ([^]OpenType_Math_Value_Record)(&math.raw_data[kerns_offset])
 		results[i] = k_arr_ptr[:heights_count + 1]
 		found_any = true
 	}
@@ -750,7 +750,7 @@ get_closest_math_variant :: proc(
 	actual_size: u16,
 	found: bool,
 ) {
-	variants, assembly, ok := get_math_variants(math, glyph_id, is_vertical)
+	variants, _, ok := get_math_variants(math, glyph_id, is_vertical)
 	if !ok || len(variants) == 0 {return 0, 0, false}
 	// Start with the original glyph
 	variant_glyph = glyph_id

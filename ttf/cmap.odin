@@ -1,7 +1,5 @@
 package ttf
 
-import "base:runtime"
-
 // https://docs.microsoft.com/en-us/typography/opentype/spec/cmap
 
 CMAP_Version :: enum u16 {

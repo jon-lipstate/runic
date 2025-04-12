@@ -1,9 +1,6 @@
 package shaper
 // TODO: move to ttf??
 import ttf "../ttf"
-import "core:fmt"
-import "core:slice"
-
 
 Latin_Default_Features := create_feature_set(.ccmp, .liga, .clig)
 Arabic_Default_Features := create_feature_set(.init, .fina, .medi, .rlig)

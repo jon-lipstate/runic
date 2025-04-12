@@ -1,8 +1,5 @@
 package ttf
 
-import "core:testing"
-import "core:reflect"
-import "core:fmt"
 import "base:runtime"
 
 Glyph :: distinct u16

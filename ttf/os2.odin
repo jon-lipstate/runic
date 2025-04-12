@@ -326,7 +326,6 @@ OpenType_OS2_Table_V2_Plus :: struct #packed {
 	us_lower_optical_point_size: u16be, // Lower optical point size in TWIPS (version 5+)
 	us_upper_optical_point_size: u16be, // Upper optical point size in TWIPS (version 5+)
 }
-import "core:fmt"
 
 load_os2_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	ctx := Read_Context { ok = true }
@@ -350,7 +349,7 @@ load_os2_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 	// Create a new OS2_Table structure
 	os2 := new(OS2_Table, font.allocator)
 	os2.raw_data = os2_data
-	os2.tbl = transmute(^OpenType_OS2_Table)&os2_data[0]
+	os2.tbl = (^OpenType_OS2_Table)(raw_data(os2_data))
 	os2.version = version
 
 	// Check if the table has enough data for the version
@@ -384,7 +383,7 @@ load_os2_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 
 	// Cast data to the full structure - fields beyond the version's 
 	// expected size will just be garbage, but we'll check version before accessing them
-	os2.tbl = transmute(^OpenType_OS2_Table)&os2_data[0]
+	os2.tbl = (^OpenType_OS2_Table)(raw_data(os2_data))
 
 	return Table_Entry{data = os2}, .None
 }

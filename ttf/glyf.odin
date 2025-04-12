@@ -7,7 +7,6 @@ The glyf table contains the glyph outlines. Each glyph outline is described usin
 sequence of contours. For simple glyphs, these contours directly represent the glyph shape.
 For composite glyphs, the contours from other glyphs are combined to form the final glyph.
 */
-import "core:fmt"
 import "base:runtime"
 
 Glyf_Table :: struct {
@@ -150,7 +149,7 @@ get_glyf_entry :: proc(glyf: ^Glyf_Table, glyph_id: Glyph) -> (glyph: Glyf_Entry
 	if !glyph.is_empty {
 		if bounds_check(offset + length > uint(len(glyf.data))) {return}
 		glyph.slice = glyf.data[offset:offset + length]
-		glyph.header = transmute(^OpenType_Glyf_Entry_Header)&glyph.slice[0]
+		glyph.header = (^OpenType_Glyf_Entry_Header)(&glyph.slice[0]) // raw_data(glyph.slice) ?
 	}
 
 	return glyph, true

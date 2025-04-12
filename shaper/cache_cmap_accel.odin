@@ -2,8 +2,6 @@ package shaper
 
 import ttf "../ttf"
 import "base:runtime"
-import "core:fmt"
-import "core:unicode/utf8"
 
 CMAP_Accelerator :: struct {
 	ascii_direct:  [256]Glyph,

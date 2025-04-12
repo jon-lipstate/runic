@@ -2,7 +2,6 @@ package shaper
 
 import ttf "../ttf"
 import "core:fmt"
-import "core:unicode/utf8"
 
 // Main shaping entry point that leverages the engine and cache
 shape_text_with_font :: proc(

@@ -292,7 +292,7 @@ iter_single_pos_value :: proc(
 
 			start_glyph := read_u16(it.gpos.raw_data, range_offset)
 			end_glyph := read_u16(it.gpos.raw_data, range_offset + 2)
-			start_coverage_index := read_u16(it.gpos.raw_data, range_offset + 4)
+			// start_coverage_index := read_u16(it.gpos.raw_data, range_offset + 4)
 
 			range_size := uint(end_glyph) - uint(start_glyph) + 1
 
@@ -408,7 +408,7 @@ iter_pair_pos_format1 :: proc(
 		}
 
 		// Get the first glyph from the coverage table
-		first_glyph := Glyph(0)
+		first_glyph = Glyph(0)
 		if bounds_check(it.coverage_offset + 2 > uint(len(it.gpos.raw_data))) {
 			return 0, 0, {}, {}, false
 		}

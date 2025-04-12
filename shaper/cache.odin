@@ -2,12 +2,6 @@ package shaper
 
 import ttf "../ttf"
 import "core:fmt"
-import "core:mem"
-import "core:slice"
-import "core:strings"
-import "core:sync"
-import "core:time"
-import "core:unicode/utf8"
 
 Shaping_Cache_Key :: struct {
 	font_id:           ^Font, // Unique identifier for the font
@@ -103,7 +97,7 @@ get_or_create_shape_cache :: proc(
 
 			if has_required {
 				fmt.printf("Adding required GSUB feature (index %d)\n", feature_index)
-				lookup_list_offset := uint(gsub.header.lookup_list_offset)
+				// lookup_list_offset := uint(gsub.header.lookup_list_offset)
 
 				lookup_iter, ok := ttf.into_lookup_iter(gsub.raw_data, feature_offset)
 				if !ok {return}
@@ -183,7 +177,7 @@ get_or_create_shape_cache :: proc(
 
 			if has_required {
 				fmt.printf("Adding required gpos feature (index %d)\n", feature_index)
-				lookup_list_offset := uint(gpos.header.lookup_list_offset)
+				// lookup_list_offset := uint(gpos.header.lookup_list_offset)
 
 				lookup_iter, ok := ttf.into_lookup_iter(gpos.raw_data, feature_offset)
 				if !ok {

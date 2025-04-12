@@ -6,7 +6,6 @@ import "base:intrinsics"
 import "core:os"
 import "core:log"
 import "core:slice"
-import "core:strings"
 import "../memory"
 
 LOAD_ARENA_MUL_SIZE :: 3
@@ -45,9 +44,12 @@ _load_font_from_data :: proc(data: []byte, arena: runtime.Arena, options: Font_L
 				ctx.ok = false
 				log.errorf("[Ttf parser] found duplicate table '%v'", tag)
 			} else {
-				table_data, table_ok := get_table_from_directory(&ctx, i64(table.offset), i64(table.length), data)
-				font._has_tables += { tag }
-				font._tables[tag] = { tag, u32(table.check_sum), table_data, true, false, nil }
+				if table_data, table_ok := get_table_from_directory(&ctx, i64(table.offset), i64(table.length), data); table_ok {
+					font._has_tables += { tag }
+					font._tables[tag] = { tag, u32(table.check_sum), table_data, true, false, nil }
+				} else {
+					return {}, .Invalid_Table_Format // or offset?
+				}
 			}
 		}
 	}
@@ -94,11 +96,13 @@ load_font_from_path :: proc(filepath: string, allocator: runtime.Allocator, opti
 	size := options.arena_size <= 0 ? uint(os.file_size_from_path(filepath) * (LOAD_ARENA_MUL_SIZE + 1)) : uint(options.arena_size)
 	arena_err := runtime.arena_init(&arena, size, allocator)
 	if arena_err != nil {
+		log.errorf("Unable to init arena with size %v", size)
 		return {}, .Unknown
 	}
 
 	data, ok := os.read_entire_file(filepath, runtime.arena_allocator(&arena))
-	if ! ok {
+	if !ok {
+		log.errorf("Unable to read font file %v", filepath)
 		return {}, .Unknown
 	}
 	return _load_font_from_data(data, arena, options)
@@ -154,7 +158,7 @@ extract_basic_metadata :: proc(font: ^Font) -> Font_Error {
 		return .Missing_Required_Table // head table is required
 	}
 
-	em_offset := transmute(^u16)&head_data[18]
+	em_offset := cast(^u16)&head_data[18]
 	font.units_per_em = be_to_host_u16(em_offset^)
 
 	// A valid font must have non-zero units_per_em
@@ -164,7 +168,7 @@ extract_basic_metadata :: proc(font: ^Font) -> Font_Error {
 	maxp_data, m_ok := get_table_data(font, .maxp)
 	if !m_ok || len(maxp_data) < 6 {return .Missing_Required_Table}		// maxp table is required 
 
-	ng_offset := transmute(^u16)&maxp_data[4]
+	ng_offset := cast(^u16)&maxp_data[4]
 	font.num_glyphs = be_to_host_u16(ng_offset^)
 
 	if font.num_glyphs == 0 {return .Invalid_Font_Format}	// A valid font must have at least one glyph
@@ -173,7 +177,6 @@ extract_basic_metadata :: proc(font: ^Font) -> Font_Error {
 }
 tag_to_str :: proc(tag: ^[4]u8) -> string {
 	p: [^]u8 = &tag[0]
-	table_tag := string(p[:4])
 
 	// Handle potential null bytes in the tag
 	clean_len := 4

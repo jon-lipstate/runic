@@ -1,7 +1,6 @@
 package main
 
 import "core:fmt"
-import "core:os"
 import "core:unicode/utf8"
 
 import shaper "./shaper"
@@ -12,14 +11,14 @@ xmain :: proc() {
 	defer shaper.destroy_engine(engine)
 
 	// Load and register a font
-	font, err := ttf.load_font("./segoeui.ttf")
-	defer ttf.destroy_font(&font)
+	font, err := ttf.load_font("./segoeui.ttf", context.allocator)
+	defer ttf.destroy_font(font)
 	if err != .None {
 		fmt.eprintln("Error loading font:", err)
 		return
 	}
 
-	font_id, ok := shaper.register_font(engine, &font)
+	font_id, ok := shaper.register_font(engine, font)
 	if !ok {
 		fmt.eprintln("Error registering font")
 		return

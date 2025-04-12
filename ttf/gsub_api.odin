@@ -227,7 +227,7 @@ get_coverage_index :: proc(
 				low = mid + 1
 			} else {
 				// Found the range, calculate the coverage index
-				index := start_coverage_index + u16(be_glyph_id - start_glyph)
+				index = start_coverage_index + u16(be_glyph_id - start_glyph)
 				// fmt.printf("Match found in range, index = %d\n", index)
 				return index, true
 			}

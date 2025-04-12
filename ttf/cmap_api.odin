@@ -162,7 +162,7 @@ get_glyph_from_subtable :: proc(
 
 			// Binary search through segments
 			left, right := uint(0), f4.segment_count - 1
-			found := false
+			found = false
 			mid: uint
 			start_code, end_code: u16
 			id_delta: i16
@@ -472,8 +472,7 @@ get_variation_selector_glyph :: proc(
 			if base_char >= rune(start_unicode) &&
 			   base_char <= rune(start_unicode) + rune(additional_count) {
 				// Use default glyph for this base character
-				base_glyph, found := get_glyph_from_cmap(font, base_char)
-				return base_glyph, found
+				return get_glyph_from_cmap(font, base_char)
 			}
 		}
 	}

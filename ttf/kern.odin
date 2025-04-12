@@ -297,13 +297,13 @@ get_kerning_format0 :: proc(
 
 	// First check if we should start at the range_shift portion
 	if range_shift > 0 {
-		first_range_pair_offset := pairs_offset
+		// first_range_pair_offset := pairs_offset
 		last_range_pair_offset := pairs_offset + uint(search_range) - 6
 
 		if last_range_pair_offset + 6 <= uint(len(data)) {
-			first_range_key :=
-				(u32(read_u16(data, first_range_pair_offset)) << 16) |
-				u32(read_u16(data, first_range_pair_offset + 2))
+			// first_range_key :=
+				// (u32(read_u16(data, first_range_pair_offset)) << 16) |
+				// u32(read_u16(data, first_range_pair_offset + 2))
 			last_range_key :=
 				(u32(read_u16(data, last_range_pair_offset)) << 16) |
 				u32(read_u16(data, last_range_pair_offset + 2))
@@ -384,7 +384,7 @@ get_kerning_format1 :: proc(
 	class_table_offset := uint(read_u16(data, header_offset + 2))
 	state_array_offset := uint(read_u16(data, header_offset + 4))
 	entry_table_offset := uint(read_u16(data, header_offset + 6))
-	value_table_offset := uint(read_u16(data, header_offset + 8))
+	// value_table_offset := uint(read_u16(data, header_offset + 8))
 
 	// Check if stateTableOffset is being used for an initial state
 	state_table_offset := uint(6) // Common header size
@@ -559,9 +559,9 @@ get_glyph_class_from_state_table :: proc(
 
 		unit_count := read_u16(data, class_table_offset + 2)
 		unit_size := read_u16(data, class_table_offset + 4)
-		search_range := read_u16(data, class_table_offset + 6)
-		entry_selector := read_u16(data, class_table_offset + 8)
-		range_shift := read_u16(data, class_table_offset + 10)
+		// search_range := read_u16(data, class_table_offset + 6)
+		// entry_selector := read_u16(data, class_table_offset + 8)
+		// range_shift := read_u16(data, class_table_offset + 10)
 
 		lookup_offset := class_table_offset + 12
 
@@ -663,7 +663,6 @@ get_kerning_format2 :: proc(
 	}
 
 	// Read Format 2 header
-	row_width := read_u16(data, header_offset)
 	left_class_table_offset := uint(read_u16(data, header_offset + 2)) + subtable_offset
 	right_class_table_offset := uint(read_u16(data, header_offset + 4)) + subtable_offset
 	kerning_array_offset := uint(read_u16(data, header_offset + 6)) + subtable_offset

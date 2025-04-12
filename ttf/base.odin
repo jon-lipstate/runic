@@ -265,7 +265,7 @@ get_script_baseline_values :: proc(
 					   tag_list_offset + 2 + uint(tag_count) * 4 > uint(len(base_table.raw_data)),
 				   ) {
 				// Create slice of tags
-				tags_ptr := transmute([^]Tag)&base_table.raw_data[tag_list_offset + 2]
+				tags_ptr := ([^]Tag)(&base_table.raw_data[tag_list_offset + 2])
 				baseline_tags_array = tags_ptr[:tag_count]
 			}
 		}
@@ -286,7 +286,7 @@ get_script_baseline_values :: proc(
 			return nil, nil, 0, false
 		}
 
-		coord_format := read_u16(base_table.raw_data, coord_offset)
+		// coord_format := read_u16(base_table.raw_data, coord_offset)
 		// All formats have the coordinate at the same position
 		baseline_values_array[i] = i16(read_i16(base_table.raw_data, coord_offset + 2))
 	}
@@ -478,7 +478,7 @@ get_supported_baseline_scripts :: proc(
 		}
 
 		// Convert tag to string
-		tag := transmute(^[4]byte)&base_table.raw_data[record_offset]
+		tag := (^[4]byte)(&base_table.raw_data[record_offset])
 		tags[i] = string(tag[:])
 	}
 
@@ -538,7 +538,7 @@ get_baseline_tags :: proc(
 		}
 
 		// Convert tag to string
-		tag := transmute(^[4]byte)&base_table.raw_data[tag_offset]
+		tag := (^[4]byte)(raw_data(base_table.raw_data[tag_offset:]))
 		tags[i] = string(tag[:])
 	}
 

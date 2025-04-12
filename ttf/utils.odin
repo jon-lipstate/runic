@@ -1,11 +1,8 @@
 package ttf
 
-
 import "base:intrinsics"
-import "base:runtime"
 import "core:fmt"
 import "core:reflect"
-import "core:strings"
 import "core:unicode/utf16"
 is_enum :: intrinsics.type_is_enum
 
@@ -134,7 +131,7 @@ read_u64 :: proc(buf: []u8, offset: uint) -> u64 {
 }
 
 read_i64 :: proc(buf: []u8, offset: uint) -> i64 {
-	return transmute(i64)read_u64(buf, offset)
+	return i64(read_u64(buf, offset))
 }
 
 // Font-specific type readers
@@ -147,12 +144,12 @@ read_fixed :: proc(buf: []u8, offset: uint) -> f32 {
 
 read_tag :: proc(buf: []u8, byte_offset: uint) -> string {
 	assert(int(byte_offset) * 4 <= len(buf), "Buffer overrun")
-	ptr := transmute([^]u8)(&buf[byte_offset])
+	ptr := ([^]u8)(&buf[byte_offset])
 	tag := ptr[:4]
 	// Trim any non-ASCII characters from the end (supports for 3-letter tables)
 	non_char_values := 0
 	for i := 3; i >= 0; i -= 1 {
-		if (transmute([]u8)tag)[i] < 0x20 || (transmute([]u8)tag)[i] > 0x7F {non_char_values += 1}
+		if ([]u8)(tag)[i] < 0x20 || ([]u8)(tag)[i] > 0x7F {non_char_values += 1}
 	}
 	tag = tag[:4 - non_char_values]
 	return string(tag)
@@ -168,9 +165,9 @@ be_to_host_u16 :: proc(val: u16) -> u16 {
 
 be_to_host_i16 :: proc(val: i16) -> i16 {
 	when ODIN_ENDIAN == .Little {
-		v := transmute(u16)val
+		v := u16(val)
 		r := (v >> 8) | (v << 8)
-		return transmute(i16)r
+		return i16(r)
 	} else {
 		return val
 	}
@@ -191,13 +188,13 @@ be_to_host_u32 :: proc(val: u32) -> u32 {
 
 be_to_host_i32 :: proc(val: i32) -> i32 {
 	when ODIN_ENDIAN == .Little {
-		v := transmute(u32)val
+		v := u32(val)
 		r :=
 			((v & 0x000000FF) << 24) |
 			((v & 0x0000FF00) << 8) |
 			((v & 0x00FF0000) >> 8) |
 			((v & 0xFF000000) >> 24)
-		return transmute(i32)r
+		return i32(r)
 	} else {
 		return val
 	}
@@ -222,7 +219,7 @@ be_to_host_u64 :: proc(val: u64) -> u64 {
 
 be_to_host_i64 :: proc(val: i64) -> i64 {
 	when ODIN_ENDIAN == .Little {
-		v := transmute(u64)val
+		v := u64(val)
 		r :=
 			((v & 0x00000000000000FF) << 56) |
 			((v & 0x000000000000FF00) << 40) |
@@ -232,7 +229,7 @@ be_to_host_i64 :: proc(val: i64) -> i64 {
 			((v & 0x0000FF0000000000) >> 24) |
 			((v & 0x00FF000000000000) >> 40) |
 			((v & 0xFF00000000000000) >> 56)
-		return transmute(i64)r
+		return i64(r)
 	} else {
 		return val
 	}

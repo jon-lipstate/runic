@@ -1,7 +1,6 @@
 package shaper
 
 import ttf "../ttf"
-import "core:fmt"
 
 // Apply positioning lookups from the cache
 apply_positioning_lookups :: proc(
@@ -14,8 +13,8 @@ apply_positioning_lookups :: proc(
 	// Apply each lookup in order
 	for lookup_index in lookup_indices {
 		// Get lookup info
-		lookup_type, lookup_flags, lookup_offset, ok := ttf.get_pos_lookup_info(gpos, lookup_index)
-		if !ok {continue}
+		lookup_type, lookup_flags, _, ok := ttf.get_pos_lookup_info(gpos, lookup_index)
+		if !ok {continue} // TODO(Jeroen): can we replace with `or_continue`?
 
 		// Create iterator for the subtables of this lookup
 		subtable_iter, ok2 := ttf.into_subtable_iter_gpos(gpos, lookup_index)
@@ -355,7 +354,7 @@ apply_mark_to_base_subtable :: proc(
 		base_glyph := buffer.glyphs[base_index].glyph_id
 		mark_glyph := buffer.glyphs[i].glyph_id
 
-		base_anchor, mark_anchor, mark_class, found := ttf.get_mark_base_anchors(
+		base_anchor, mark_anchor, _, found := ttf.get_mark_base_anchors(
 			gpos,
 			base_glyph,
 			mark_glyph,
@@ -516,11 +515,13 @@ apply_extension_pos_subtable :: proc(
 apply_basic_positioning :: proc(font: ^Font, buffer: ^Shaping_Buffer, cache: ^Shaping_Cache) {
 	if buffer == nil {return}
 
-	// Get horizontal metrics (hmtx) table
-	hmtx, has_hmtx := ttf.get_table(font, .hmtx, ttf.load_hmtx_table, ttf.OpenType_Hmtx_Table)
+	// Get horizontal metrics (hmtx) table - but don't use it?
+	/*
+	htmx, has_hmtx := ttf.get_table(font, .hmtx, ttf.load_hmtx_table, ttf.OpenType_Hmtx_Table)
 	if !has_hmtx {
 		return
 	}
+	*/
 
 	// Resize positions array to match glyphs
 	resize(&buffer.positions, len(buffer.glyphs))

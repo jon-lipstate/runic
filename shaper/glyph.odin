@@ -1,7 +1,6 @@
 package shaper
 
 import ttf "../ttf"
-import "core:unicode/utf8"
 
 map_runes_to_glyphs :: proc(font: ^Font, buffer: ^Shaping_Buffer, cache: ^Shaping_Cache = nil) {
 	if buffer == nil || len(buffer.runes) == 0 {return}
@@ -11,6 +10,12 @@ map_runes_to_glyphs :: proc(font: ^Font, buffer: ^Shaping_Buffer, cache: ^Shapin
 
 	// Get GDEF table if available
 	gdef, has_gdef := ttf.get_table(font, .GDEF, ttf.load_gdef_table, ttf.GDEF_Table)
+
+	// -vet said it was unused, but without it we can't call determine_glyph_category
+	// Perhaps `map_runes_to_glyphs` should return an error?
+	// Alternatively, if an OTF/TTF *must* contain this table, we can sanity check its existence when loading a font,
+	// so we can remove this return value.
+	assert(has_gdef)
 
 	// Determine if we need to process in visual RTL order
 	is_rtl := buffer.direction == .Right_To_Left
