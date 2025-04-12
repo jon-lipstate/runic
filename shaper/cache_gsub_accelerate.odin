@@ -603,7 +603,7 @@ accelerate_alternate_subtable :: proc(
 	subtable_offset: uint,
 	format: u16,
 ) {
-	if true do unimplemented()
+	if true { unimplemented() }
 
 	if format != 1 {return} 	// Alternate substitution only has format 1
 
@@ -789,7 +789,7 @@ accelerate_context_subtable :: proc(
 	subtable_offset: uint,
 	format: u16,
 ) {
-	if true do unimplemented()
+	if true { unimplemented() }
 
 	if format < 1 || format > 3 {
 		fmt.printf("Invalid Context format: %d\n", format)
@@ -880,7 +880,7 @@ accelerate_chained_context_format1 :: proc(
 	lookup_idx: u16,
 	subtable_offset: uint,
 ) {
-	if true do unimplemented()
+	if true { unimplemented() }
 
 	chained_accel := Chained_Context_Accelerator {
 		format = 1,
@@ -925,7 +925,7 @@ accelerate_chained_context_format2 :: proc(
 	lookup_idx: u16,
 	subtable_offset: uint,
 ) {
-	if true do unimplemented()
+	if true { unimplemented() }
 
 	chained_accel := Chained_Context_Accelerator {
 		format = 2,
@@ -1167,7 +1167,7 @@ accelerate_reverse_chained_subtable :: proc(
 	subtable_offset: uint,
 	format: u16,
 ) {
-	if true do unimplemented()
+	if true { unimplemented() }
 	// Reverse chained substitution only has format 1
 	if format != 1 {
 		fmt.printf("Unsupported ReverseChained subtable format: %d\n", format)

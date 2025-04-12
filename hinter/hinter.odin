@@ -349,7 +349,7 @@ TTF_HINTER_INSTRUCTION_LEN := [256]i8 {
 	1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
 	1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
 	1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
-	1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1
+	1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
 }
 
 Hinter_Program_Ttf_Graphics_State :: struct {
@@ -712,12 +712,7 @@ hinter_program_interpolate_or_shift :: proc(ctx: ^Hinter_Program_Execution_Conte
 
 	coord0, coord1: f32
 	max_min :: proc(a, b: f32) -> (f32, f32) {
-		if (a > b) {
-		return a, b
-		}
-		else {
-		return b, a
-		}
+		return a, b if a > b else b, a
 	}
 	coord1, coord0 = max_min(ctx.program.zone1.orig[touch_0][axis], ctx.program.zone1.orig[touch_1][axis])
 
@@ -1777,7 +1772,7 @@ hinter_program_ttf_ins_iup :: proc(ctx: ^Hinter_Program_Execution_Context) {
 	// Post-IUP occurs after IUP has been executed using both the x and y axes.
 
 	if (ctx.iup_state == TTF_HINTER_TOUCH_XY) {
-		return;
+		return
 	}
 
 	touch_flag := ins & 1 != 0 ? TTF_HINTER_TOUCH_X : TTF_HINTER_TOUCH_Y
@@ -1827,7 +1822,7 @@ hinter_program_ttf_ins_iup :: proc(ctx: ^Hinter_Program_Execution_Context) {
 
 			if ctx.program.zone1.touch[point_idx] & touch_flag != 0 {
 				if finding_touch_1 {
-					hinter_program_interpolate_or_shift(ctx, axis, start_point_idx, end_point_idx, touch_0, point_idx);
+					hinter_program_interpolate_or_shift(ctx, axis, start_point_idx, end_point_idx, touch_0, point_idx)
 
 					finding_touch_1 = point_idx != end_point_idx || ctx.program.zone1.touch[start_point_idx] & touch_flag == 0
 					if finding_touch_1 {
@@ -1839,14 +1834,14 @@ hinter_program_ttf_ins_iup :: proc(ctx: ^Hinter_Program_Execution_Context) {
 				}
 			}
 
-			point_idx += 1;
+			point_idx += 1
 		}
 
 		if finding_touch_1 {
 			// The index of the second touched point wraps back to the beginning.
 			for i in start_point_idx..=touch_0 {
 				if ctx.program.zone1.touch[i] & touch_flag != 0 {
-					hinter_program_interpolate_or_shift(ctx, axis, start_point_idx, end_point_idx, touch_0, i);
+					hinter_program_interpolate_or_shift(ctx, axis, start_point_idx, end_point_idx, touch_0, i)
 					break
 				}
 			}
@@ -2098,8 +2093,8 @@ hinter_program_ttf_ins_npushb :: proc(ctx: ^Hinter_Program_Execution_Context) {
 hinter_program_ttf_ins_npushw :: proc(ctx: ^Hinter_Program_Execution_Context) {
 	count := u8(hinter_program_ttf_instructions_next(ctx))
 	for _ in 0..<count {
-		ms := hinter_program_ttf_instructions_next(ctx);
-		ls := hinter_program_ttf_instructions_next(ctx);
+		ms := hinter_program_ttf_instructions_next(ctx)
+		ls := hinter_program_ttf_instructions_next(ctx)
 		v := i32(i16(u16(ms) << 8 | u16(ls)))
 		hinter_program_ttf_stack_push(ctx, [1]i32 { v })
 	}
@@ -2691,8 +2686,8 @@ hinter_program_ttf_ins_pushb :: proc(ctx: ^Hinter_Program_Execution_Context) {
 hinter_program_ttf_ins_pushw :: proc(ctx: ^Hinter_Program_Execution_Context) {
 	count := (u8(ctx.ins) & 0x7) + 1
 	for _ in 0..<count {
-		ms := hinter_program_ttf_instructions_next(ctx);
-		ls := hinter_program_ttf_instructions_next(ctx);
+		ms := hinter_program_ttf_instructions_next(ctx)
+		ls := hinter_program_ttf_instructions_next(ctx)
 		v := i32(i16(u16(ms) << 8 | u16(ls)))
 		hinter_program_ttf_stack_push(ctx, [1]i32 { v })
 	}
@@ -2701,7 +2696,7 @@ hinter_program_ttf_ins_pushw :: proc(ctx: ^Hinter_Program_Execution_Context) {
 hinter_program_ttf_ins_mdrp :: proc(ctx: ^Hinter_Program_Execution_Context) {
 	point_idx := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
 
-	is_twilight_zone := ctx.gs.gep0 == 0 || ctx.gs.gep1 == 0;
+	is_twilight_zone := ctx.gs.gep0 == 0 || ctx.gs.gep1 == 0
 	rp0_orig, point_orig: [2]f32
 
 	if is_twilight_zone {
@@ -2743,24 +2738,24 @@ hinter_program_ttf_ins_mdrp :: proc(ctx: ^Hinter_Program_Execution_Context) {
 }
 
 hinter_program_ttf_apply_single_width_cut_in :: proc(ctx: ^Hinter_Program_Execution_Context, value: f32) -> f32 {
-	absDiff := abs(value - ctx.gs.single_width_cutin);
+	absDiff := abs(value - ctx.gs.single_width_cutin)
 	if absDiff < ctx.gs.single_width_cutin {
 		if value < 0 {
-			return -ctx.gs.single_width_cutin;
+			return -ctx.gs.single_width_cutin
 		}
-		return ctx.gs.single_width_cutin;
+		return ctx.gs.single_width_cutin
 	}
-	return value;
+	return value
 }
 
 hinter_program_ttf_apply_min_dist :: proc(ctx: ^Hinter_Program_Execution_Context, value: f32) -> f32 {
 	if abs(value) < ctx.gs.min_distance {
 		if value < 0 {
-			return -ctx.gs.min_distance;
+			return -ctx.gs.min_distance
 		}
-		return ctx.gs.min_distance;
+		return ctx.gs.min_distance
 	}
-	return value;
+	return value
 }
 
 hinter_program_ttf_ins_mirp :: proc(ctx: ^Hinter_Program_Execution_Context) {
@@ -2854,7 +2849,7 @@ hinter_program_load_font_wide_program :: proc(font: ^ttf.Font) -> (^Hinter_Font_
 		base_ptr, font_data, shared_instructions, err := memory.make_multi(
 			memory.Make_Multi(^Hinter_Font_Wide_Data) {},
 			memory.Make_Multi([][]byte) { len = int(maxp.data.v1_0.max_function_defs) },
-			f.allocator
+			f.allocator,
 		)
 		if err != nil {
 			return {}, .Unknown
@@ -2908,7 +2903,7 @@ hinter_program_make :: proc(font: ^ttf.Font, pt_size: f32, dpi: f32, allocator: 
 			Make_Multi([][2]f32) { len = int(font_data.zone_0_size) },
 			Make_Multi([]u8) { len = int(font_data.zone_0_size) },
 			Make_Multi([]i32) { len = int(font_data.stack_size) },
-			allocator
+			allocator,
 		)
 	if alloc_err != nil {
 		return {}, false
