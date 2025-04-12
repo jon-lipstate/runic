@@ -1,9 +1,6 @@
 package shaper
 
 import "../ttf"
-import "core:fmt"
-import "core:slice"
-
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Apply GSUB using accelerator
@@ -58,8 +55,8 @@ apply_gsub_with_accelerator :: proc(
 
 	// Apply each lookup in the optimized order
 	for lookup_idx in cache.gsub_lookups {
-		lookup_type, lookup_flags, lookup_offset, ok := ttf.get_lookup_info(gsub, lookup_idx)
-		if !ok {continue}
+		lookup_type, lookup_flags, _, ok := ttf.get_lookup_info(gsub, lookup_idx)
+		if !ok {continue} // TODO(Jeroen): Can this be replaced with `or_continue`?
 
 		// If this is an extension lookup, use the resolved type
 		actual_lookup_type := lookup_type

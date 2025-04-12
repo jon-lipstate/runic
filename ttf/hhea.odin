@@ -1,7 +1,5 @@
 package ttf
 
-import "base:runtime"
-
 // The hhea table is needed to parse hmtx properly
 OpenType_Hhea_Table :: struct {
 	version:                Fixed, // 0x00010000 (1.0)
@@ -40,7 +38,7 @@ load_hhea_table :: proc(font: ^Font) -> (Table_Entry, Font_Error) {
 
 destroy_hhea_table :: proc(data: rawptr) {
 	if data == nil {return}
-	hhea := cast(^OpenType_Hhea_Table)data
+	// hhea := cast(^OpenType_Hhea_Table)data
 }
 //////////////////////////////////////////////////////////////////////////////////////////
 get_ascender :: proc(hhea: ^OpenType_Hhea_Table) -> i16 {

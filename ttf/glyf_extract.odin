@@ -2,9 +2,6 @@ package ttf
 
 import "../memory"
 
-import "core:fmt"
-import "core:mem"
-
 IDENTITY_MATRIX :: matrix[2, 3]f32{
 	1.0, 0.0, 0.0, 
 	0.0, 1.0, 0.0, 

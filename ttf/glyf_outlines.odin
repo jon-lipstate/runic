@@ -1,8 +1,5 @@
 package ttf
 
-import "core:fmt"
-import "core:math"
-
 // Glyph_Outline_Cache :: struct {
 // 	font:             ^Font,
 // 	extracted_glyphs: map[u16]Extracted_Glyph,
@@ -151,7 +148,7 @@ create_outline_from_simple_extracted :: proc(
 		contour.segments = make([dynamic]Path_Segment, 0, endpoint - start_idx + 1, allocator)
 
 		// Process points for this contour
-		points_in_contour := endpoint - start_idx + 1
+		// points_in_contour := endpoint - start_idx + 1
 
 		// Add segments by processing points
 		ok := create_segments_for_contour(

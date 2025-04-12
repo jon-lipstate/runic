@@ -161,7 +161,7 @@ build_gsub_accelerator :: proc(font: ^Font, cache: ^Shaping_Cache) -> bool {
 
 	// First pass: Identify and resolve extension lookups
 	for lookup_idx in cache.gsub_lookups {
-		lookup_type, lookup_flags, lookup_offset, lookup_ok := ttf.get_lookup_info(
+		lookup_type, _, _, lookup_ok := ttf.get_lookup_info(
 			gsub,
 			lookup_idx,
 		)
@@ -187,11 +187,12 @@ build_gsub_accelerator :: proc(font: ^Font, cache: ^Shaping_Cache) -> bool {
 	// Second pass: Process all lookups, including resolved extensions
 	// FIXME: this is reprocessing the extension types since they are already done above
 	for lookup_idx in cache.gsub_lookups {
-		lookup_type, lookup_flags, lookup_offset, lookup_ok := ttf.get_lookup_info(
+		// NOTE(Jeroen): Seeing several calls to `get_lookup_info` that only use the first return value. Maybe write a `get_lookup_type`?
+		lookup_type, _, _, lookup_ok := ttf.get_lookup_info(
 			gsub,
 			lookup_idx,
 		)
-		if !lookup_ok {continue}
+		if !lookup_ok {continue} // NOTE(Jeroen): `or_continue`?
 
 		// Check if this is a resolved extension lookup
 		if lookup_type == .Extension {
@@ -304,7 +305,7 @@ build_feature_lookup_map :: proc(
 	feature_iter, iter_ok := ttf.into_feature_iter_gsub(gsub, cache.gsub_lang_sys_offset)
 	if !iter_ok {return}
 
-	for feature_index, record, feature_offset in ttf.iter_feature_gsub(&feature_iter) {
+	for _, record, feature_offset in ttf.iter_feature_gsub(&feature_iter) {
 		feature_tag := Feature_Tag(ttf.tag_to_u32(record.feature_tag))
 
 		lookup_iter, lookup_ok := ttf.into_lookup_iter(gsub.raw_data, feature_offset)
@@ -381,7 +382,9 @@ accelerate_single_subtable :: proc(
 	// accelerate_single_substitution(gsub, accel, lookup_idx, subtable_offset, abs_coverage_offset)
 	if bounds_check(subtable_offset + 4 >= uint(len(gsub.raw_data))) {return}
 
-	format := ttf.read_u16(gsub.raw_data, subtable_offset)
+	// NOTE(Jeroen): `format` is passed in and this shadows it. Are we supposed to read it or not?
+	// format := ttf.read_u16(gsub.raw_data, subtable_offset)
+
 	// Initialize accelerator
 	single_accel := Single_Subst_Accelerator {
 		format   = .Single,
@@ -483,7 +486,7 @@ accelerate_multiple_subtable :: proc(
 		coverage     = accel.coverage_digest[abs_coverage_offset],
 		sequence_map = make(map[Glyph][]Glyph),
 	}
-	multiple_accel := &accel.multiple_subst[lookup_idx]
+	// multiple_accel := &accel.multiple_subst[lookup_idx]
 
 	// Process coverage and sequences directly
 	coverage_iter, coverage_ok := ttf.into_coverage_iter(gsub, 0, u16(abs_coverage_offset))
@@ -650,8 +653,9 @@ accelerate_ligature_subtable :: proc(
 		return
 	}
 
-	format := ttf.read_u16(gsub.raw_data, subtable_offset)
-	if format != 1 {return} 	// Only format 1 is defined for ligatures
+	// NOTE(Jeroen): `format` is passed in. Should we read it or pass it in? There's also already an early out if != 1.
+	// format := ttf.read_u16(gsub.raw_data, subtable_offset)
+	// if format != 1 {return} 	// Only format 1 is defined for ligatures
 
 	ligature_set_count := ttf.read_u16(gsub.raw_data, subtable_offset + 4)
 	ligature_set_offset := subtable_offset + 6
@@ -910,7 +914,7 @@ accelerate_chained_context_format1 :: proc(
 	if chain_rule_set_count == 0 {return}
 
 	// Process rule sets
-	rule_sets_offset := subtable_offset + size_of(u16) * 3
+	// rule_sets_offset := subtable_offset + size_of(u16) * 3
 
 	// TODO:
 
@@ -953,9 +957,9 @@ accelerate_chained_context_format2 :: proc(
 	}
 
 	// Read class definition offsets
-	backtrack_class_def_offset := ttf.read_u16(gsub.raw_data, subtable_offset + size_of(u16) * 2)
-	input_class_def_offset := ttf.read_u16(gsub.raw_data, subtable_offset + size_of(u16) * 3)
-	lookahead_class_def_offset := ttf.read_u16(gsub.raw_data, subtable_offset + size_of(u16) * 4)
+	// backtrack_class_def_offset := ttf.read_u16(gsub.raw_data, subtable_offset + size_of(u16) * 2)
+	// input_class_def_offset := ttf.read_u16(gsub.raw_data, subtable_offset + size_of(u16) * 3)
+	// lookahead_class_def_offset := ttf.read_u16(gsub.raw_data, subtable_offset + size_of(u16) * 4)
 
 	// Read chainClassSetCount
 	chain_class_set_count := ttf.read_u16(gsub.raw_data, subtable_offset + size_of(u16) * 5)
@@ -966,7 +970,7 @@ accelerate_chained_context_format2 :: proc(
 	}
 
 	// Process class sets
-	class_sets_offset := subtable_offset + size_of(u16) * 6
+	// class_sets_offset := subtable_offset + size_of(u16) * 6
 
 	// TODO:
 

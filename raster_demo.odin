@@ -2,11 +2,6 @@ package main
 
 import "core:fmt"
 import "core:log"
-import "core:math"
-import "core:mem"
-import "core:os"
-import "core:strings"
-import "core:unicode/utf8"
 
 import hinter "./hinter"
 import raster "./raster"
@@ -16,6 +11,9 @@ import ttf "./ttf"
 import "base:runtime"
 import "core:prof/spall"
 import "core:sync"
+_ :: sync
+
+USE_SPALL :: #config(USE_SPALL, true)
 
 spall_ctx: spall.Context
 @(thread_local)
@@ -57,20 +55,21 @@ spall_exit :: proc "contextless" (
 // track: ^mem.Tracking_Allocator
 main :: proc() {
 	context.logger = log.create_console_logger()
-	spall_ctx = spall.context_create("rune.spall")
-	defer spall.context_destroy(&spall_ctx)
 
-	buffer_backing := make([]u8, spall.BUFFER_DEFAULT_SIZE * 128)
-	defer delete(buffer_backing)
+	// Crikey: Using Spall, it takes 2 seconds to say it can't find a file?
+	when USE_SPALL {
+		spall_ctx = spall.context_create("rune.spall")
+		defer spall.context_destroy(&spall_ctx)
 
-	spall_buffer = spall.buffer_create(buffer_backing, u32(sync.current_thread_id()))
-	defer spall.buffer_destroy(&spall_ctx, &spall_buffer)
+		buffer_backing := make([]u8, spall.BUFFER_DEFAULT_SIZE * 128)
+		defer delete(buffer_backing)
+
+		spall_buffer = spall.buffer_create(buffer_backing, u32(sync.current_thread_id()))
+		defer spall.buffer_destroy(&spall_ctx, &spall_buffer)
+
 	/////////////////////////////////////////////////////////////////////
 	// fmt.printf("Memory After Spall %v KiB\n", track.total_memory_allocated / 1024)
-
-	engine := shaper.create_engine()
-	defer shaper.destroy_engine(engine)
-	// fmt.printf("Memory After create_engine %v KiB\n", track.total_memory_allocated / 1024)
+	}
 
 	// Load and register a font
 	font_path := "./segoeui.ttf"
@@ -80,6 +79,11 @@ main :: proc() {
 		return
 	}
 	// defer ttf.destroy_font(&font) // <- the engine will delete them; maybe dont do that...
+
+	// Don't set up the engine until we have a loaded font
+	engine := shaper.create_engine()
+	defer shaper.destroy_engine(engine)
+	// fmt.printf("Memory After create_engine %v KiB\n", track.total_memory_allocated / 1024)
 
 	font_id, ok := shaper.register_font(engine, font)
 	if !ok {
@@ -101,14 +105,14 @@ main :: proc() {
 test_specific_glyphs :: proc(font: ^ttf.Font) {
 	// fmt.println("\nTesting specific glyphs...")
 
-	cmap_table, has_cmap := ttf.get_table(font, .cmap, ttf.load_cmap_table, ttf.CMAP_Table)
+	_, has_cmap := ttf.get_table(font, .cmap, ttf.load_cmap_table, ttf.CMAP_Table)
 	if !has_cmap {
 		// fmt.println("Error: Could not load cmap table")
 		return
 	}
 
 	iacute_rune: rune = 'í'
-	iacute_glyph, found_iacute := ttf.get_glyph_from_cmap(font, iacute_rune)
+	_, found_iacute := ttf.get_glyph_from_cmap(font, iacute_rune)
 
 	if found_iacute {
 		// fmt.printf("Found iacute glyph (ID: %d)\n", iacute_glyph)
@@ -152,14 +156,14 @@ test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font:
 	}
 
 	// fmt.println("\nShaped text:", test_text, len(buffer.glyphs))
-	for gi, i in buffer.glyphs {
-		if gi.glyph_id == 0 && transmute(u32)buffer.runes[gi.cluster] != 10 {
+	for gi in buffer.glyphs {
+		if gi.glyph_id == 0 && cast(u32)buffer.runes[gi.cluster] != 10 {
 			// fmt.printf(
 			// 	"rune: %v, codepoint: %v\n",
 			// 	buffer.runes[gi.cluster],
-			// 	transmute(u32)buffer.runes[gi.cluster],
+			// 	cast(u32)buffer.runes[gi.cluster],
 			// )
-			fmt.println(transmute(u32)buffer.runes[gi.cluster], gi)
+			fmt.println(cast(u32)buffer.runes[gi.cluster], gi)
 		}
 
 	}
@@ -267,7 +271,7 @@ render_text :: proc(
 		glyph_x := cursor_x + x_offset
 		glyph_y := baseline_y + y_offset
 
-		cluster_index := buffer.glyphs[i].cluster
+		// cluster_index := buffer.glyphs[i].cluster
 
 		// fmt.printf(
 		// 	"Placing glyph %d (ID: %d, cluster: %v) at x: %d, y: %d\n",

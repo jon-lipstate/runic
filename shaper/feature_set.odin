@@ -90,11 +90,12 @@ is_feature_set_empty :: proc(set: Feature_Set) -> bool {
 
 get_enabled_features :: proc(set: Feature_Set, allocator := context.allocator) -> []Feature_Tag {
 	// Count features first to allocate the right size array
+	// NOTE: Count is not actually used to reserve the right size
 	count := count_feature_bits(set)
 	if count == 0 {return nil}
+
 	set := set // need ptr below
 	features := make([dynamic]Feature_Tag, allocator)
-	feature_index := 0
 
 	// Iterate through all possible feature tags
 	for feature in Feature_Tag {

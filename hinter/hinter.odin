@@ -1,7 +1,6 @@
 package runic_hinter
 
 import ttf "../ttf"
-import "core:fmt"
 import "core:log"
 import "core:mem"
 import "core:math"
@@ -710,11 +709,14 @@ hinter_program_interpolate_or_shift :: proc(ctx: ^Hinter_Program_Execution_Conte
 	}
 
 
-	coord0, coord1: f32
 	max_min :: proc(a, b: f32) -> (f32, f32) {
-		return a, b if a > b else b, a
+		if a > b {
+			return a, b
+		} else {
+			return b, a
+		}
 	}
-	coord1, coord0 = max_min(ctx.program.zone1.orig[touch_0][axis], ctx.program.zone1.orig[touch_1][axis])
+	coord1, coord0 := max_min(ctx.program.zone1.orig[touch_0][axis], ctx.program.zone1.orig[touch_1][axis])
 
 	if (touch_0 >= touch_1) {
 		for i := touch_0 + 1; i <= end_point_idx; i += 1 {
@@ -1343,12 +1345,12 @@ hinter_program_ttf_dual_project :: proc(ctx: ^Hinter_Program_Execution_Context, 
 hinter_program_ttf_round_according_to_state :: proc(ctx: ^Hinter_Program_Execution_Context, v: f32) -> f32 {
 	new_v := abs(v)
 	switch ctx.gs.round_state {
-		case .to_half_grid: new_v = math.floor(new_v) + 0.5
-		case .to_grid: new_v = math.round(new_v)
-		case .to_double_grid: new_v = math.round(new_v * 2) / 2
-		case .down_to_grid: new_v = math.floor(abs(new_v))
-		case .up_to_grid: new_v = math.ceil(new_v)
-		case .off: return v
+	case .to_half_grid: new_v = math.floor(new_v) + 0.5
+	case .to_grid: new_v = math.round(new_v)
+	case .to_double_grid: new_v = math.round(new_v * 2) / 2
+	case .down_to_grid: new_v = math.floor(abs(new_v))
+	case .up_to_grid: new_v = math.ceil(new_v)
+	case .off: return v
 	}
 	return v < 0 ? -new_v : new_v
 }
@@ -2846,7 +2848,7 @@ hinter_program_load_font_wide_program :: proc(font: ^ttf.Font) -> (^Hinter_Font_
 		if ! ok {
 			return {}, .Missing_Required_Table
 		}
-		base_ptr, font_data, shared_instructions, err := memory.make_multi(
+		_, font_data, shared_instructions, err := memory.make_multi(
 			memory.Make_Multi(^Hinter_Font_Wide_Data) {},
 			memory.Make_Multi([][]byte) { len = int(maxp.data.v1_0.max_function_defs) },
 			f.allocator,
@@ -3004,8 +3006,8 @@ hinter_program_hint_glyph :: proc(program: ^Hinter_Program, glyph_id: ttf.Glyph,
 		case ttf.Extracted_Compound_Glyph:
 			is_compound = true
 			glyph_instructions = glyph.instructions
-			compound_min: [2]f32 = math.INF_F32
-			compound_max: [2]f32 = math.NEG_INF_F32
+			// compound_min: [2]f32 = math.INF_F32
+			// compound_max: [2]f32 = math.NEG_INF_F32
 		}
 
 		offset_points_start := offset_points
@@ -3212,7 +3214,8 @@ Glyph_Job :: struct {
 }
 
 gather_glyphs_jobs :: proc(glyphs_to_hint: ^[dynamic]Glyph_Job, font: ^ttf.Font, glyph_id: ttf.Glyph, transform: matrix[2, 3]f32, round_transform: bool, allocator: runtime.Allocator) -> (int, int) {
-	glyf_table, err := ttf.load_glyf_table(font)
+	// NOTE(Jeroen): This check should occur when the font is loaded. What use after all is a font without a glyf table?
+	_, err := ttf.load_glyf_table(font)
 	if err != nil {
 		return 0, 0
 	}

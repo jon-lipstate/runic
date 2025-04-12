@@ -37,7 +37,7 @@ get_pos_lookup_info :: proc(
 		return
 	}
 	// FIXME: dedicate struct, prob existing.. ><
-	lookup_header := transmute(^struct {
+	lookup_header := cast(^struct {
 		lookup_type:  GPOS_Lookup_Type,
 		lookup_flags: Lookup_Flags,
 	})&gpos.raw_data[abs_lookup_offset]
@@ -203,8 +203,8 @@ get_kerning_from_pair_pos_format1 :: proc(
 			value1_offset := pair_offset + 2 // After secondGlyph
 
 			// We're primarily interested in the horizontal advance adjustment
-			x_advance := i16(0)
-			y_advance := i16(0)
+			x_advance = i16(0)
+			y_advance = i16(0)
 
 			// Check if horizontal advance is specified in the value format
 			if value_format1.X_ADVANCE {
@@ -328,7 +328,7 @@ get_kerning_from_pair_pos_format2 :: proc(
 		return 0, 0, false
 	}
 	// TODO: dedicated struct
-	header := transmute(^struct {
+	header := cast(^struct {
 		format:            Pair_Pos_Format,
 		coverage_offset:   Offset16,
 		value_format1:     Value_Format,
@@ -629,7 +629,7 @@ read_anchor_table :: proc(
 	}
 
 	// Cast the data directly to the anchor table structure
-	anchor = transmute(^OpenType_Anchor_Table)&data[offset]
+	anchor = (^OpenType_Anchor_Table)(raw_data(data[offset:]))
 
 	return anchor, true
 }
@@ -690,16 +690,14 @@ get_mark_base_anchors :: proc(
 			if format != 1 {continue} 	// Currently only Format 1 is defined for MarkToBase
 
 			// Process MarkToBase Format 1 subtable
-			base_anchor, mark_anchor, class, found := process_mark_base_subtable(
+			base_anchor, mark_anchor, mark_class, found = process_mark_base_subtable(
 				gpos.raw_data,
 				abs_subtable_offset,
 				base_glyph,
 				mark_glyph,
 			)
 
-			if found {
-				return base_anchor, mark_anchor, class, true
-			}
+			if found { return }
 		}
 	}
 	return
@@ -728,7 +726,7 @@ process_mark_base_subtable :: proc(
 		return
 	}
 
-	header := transmute(^OpenType_Mark_Base_Pos_Format1)&data[subtable_offset]
+	header := (^OpenType_Mark_Base_Pos_Format1)(raw_data(data[subtable_offset:]))
 	// Get absolute offsets
 	mark_coverage_offset := subtable_offset + uint(header.mark_coverage_offset)
 	base_coverage_offset := subtable_offset + uint(header.base_coverage_offset)

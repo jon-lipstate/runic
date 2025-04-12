@@ -1,8 +1,6 @@
 package ttf
 
-import "core:os"
 import "core:log"
-import "core:math/rand"
 import "core:testing"
 import "core:reflect"
 import "core:fmt"
@@ -50,7 +48,7 @@ when ODIN_OS == .Windows {
 	@(test)
 	parse_all_windows_fonts :: proc(t: ^testing.T) {
 		test_files := test_gather_windows_fonts(t)
-		for file, i in test_files {
+		for file in test_files {
 			if slice.contains(FAILING_FONTS, file) {
 				continue
 			}

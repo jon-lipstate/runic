@@ -2,11 +2,6 @@ package shaper
 
 import ttf "../ttf"
 import "core:mem"
-import "core:slice"
-import "core:strings"
-import "core:sync"
-import "core:time"
-import "core:unicode/utf8"
 
 Font_ID :: distinct uint
 Font_Identity :: struct {

@@ -155,8 +155,8 @@ transform_point_f32 :: proc(rasterizer: ^Rasterizer, x, y: f32) -> (int, int) {
 	// fmt.printf("transform_point_f32 :: start at x: %v,y: %v\n", x, y)
 
 	// Calculate glyph dimensions in font units
-	glyph_width := f32(rasterizer.bbox.max.x - rasterizer.bbox.min.x)
-	glyph_height := f32(rasterizer.bbox.max.y - rasterizer.bbox.min.y)
+	// glyph_width  := f32(rasterizer.bbox.max.x - rasterizer.bbox.min.x)
+	// glyph_height := f32(rasterizer.bbox.max.y - rasterizer.bbox.min.y)
 
 	// Calculate center of the glyph in font units
 	glyph_center_x := f32(rasterizer.bbox.min.x + rasterizer.bbox.max.x) / 2
@@ -180,7 +180,7 @@ transform_point_f32 :: proc(rasterizer: ^Rasterizer, x, y: f32) -> (int, int) {
 save_bitmap_to_bmp :: proc(bitmap: ^Bitmap, filename: string) -> bool {
 	// Create BMP file
 	file, err := os.open(filename, os.O_WRONLY | os.O_CREATE | os.O_TRUNC, 0644)
-	if err != 0 {
+	if err != os.General_Error.None {
 		fmt.println("Failed to create BMP file")
 		return false
 	}
@@ -379,9 +379,9 @@ rasterize_glyph :: proc(
 	// 	rasterizer.bbox,
 	// )
 	// Render each contour
-	for &contour, i in outline.contours {
+	for &contour in outline.contours {
 		// Render all segments in the contour
-		for segment, j in contour.segments {
+		for segment in contour.segments {
 			// fmt.println("Iter ij", i, j)
 			switch s in segment {
 			case ttf.Line_Segment:

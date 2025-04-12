@@ -1,7 +1,5 @@
 package ttf
 
-import "core:fmt"
-
 Glyph_Category :: enum u8 {
 	Base,
 	Mark,

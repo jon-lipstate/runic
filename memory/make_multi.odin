@@ -41,7 +41,7 @@ Make_Multi :: struct($T:typeid) {
 
 make_multi_2 :: proc(a: Make_Multi($T00), b: Make_Multi($T01), allocator: Allocator) ->
     (rawptr, T00, T01, Allocator_Error)
-    where (intrinsics.type_is_slice(T00) || intrinsics.type_is_pointer(T00)) &&
+    where (intrinsics.type_is_slice(T00) || intrinsics.type_is_pointer(T00)),
           (intrinsics.type_is_slice(T01) || intrinsics.type_is_pointer(T01))
 {
     _T00 :: intrinsics.type_elem_type(T00)
@@ -221,12 +221,12 @@ make_multi_6 :: proc(a: Make_Multi($T00), b: Make_Multi($T01), c: Make_Multi($T0
 
 make_multi_7 :: proc(a: Make_Multi($T00), b: Make_Multi($T01), c: Make_Multi($T02), d: Make_Multi($T03), e: Make_Multi($T04), f: Make_Multi($T05), g: Make_Multi($T06), allocator: Allocator) ->
     (rawptr, T00, T01, T02, T03, T04, T05, T06, Allocator_Error)
-    where (intrinsics.type_is_slice(T00) || intrinsics.type_is_pointer(T00)) &&
-          (intrinsics.type_is_slice(T01) || intrinsics.type_is_pointer(T01)) &&
-          (intrinsics.type_is_slice(T02) || intrinsics.type_is_pointer(T02)) &&
-          (intrinsics.type_is_slice(T03) || intrinsics.type_is_pointer(T03)) &&
-          (intrinsics.type_is_slice(T04) || intrinsics.type_is_pointer(T04)) &&
-          (intrinsics.type_is_slice(T05) || intrinsics.type_is_pointer(T05)) &&
+    where (intrinsics.type_is_slice(T00) || intrinsics.type_is_pointer(T00)),
+          (intrinsics.type_is_slice(T01) || intrinsics.type_is_pointer(T01)),
+          (intrinsics.type_is_slice(T02) || intrinsics.type_is_pointer(T02)),
+          (intrinsics.type_is_slice(T03) || intrinsics.type_is_pointer(T03)),
+          (intrinsics.type_is_slice(T04) || intrinsics.type_is_pointer(T04)),
+          (intrinsics.type_is_slice(T05) || intrinsics.type_is_pointer(T05)),
           (intrinsics.type_is_slice(T06) || intrinsics.type_is_pointer(T06))
 {
     _T00 :: intrinsics.type_elem_type(T00)

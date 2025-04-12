@@ -1,7 +1,6 @@
 package shaper
 // TODO: move to ttf??
 import ttf "../ttf"
-import "core:reflect"
 
 // Ref  ISO 15924
 // https://learn.microsoft.com/en-us/typography/script-development/standard
