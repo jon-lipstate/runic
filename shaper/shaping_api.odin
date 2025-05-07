@@ -5,7 +5,7 @@ import "core:fmt"
 
 // Main shaping entry point that leverages the engine and cache
 shape_text_with_font :: proc(
-	engine: ^Rune,
+	engine: ^Engine,
 	font_id: Font_ID,
 	text: string,
 	script: Script_Tag = .latn,
@@ -61,7 +61,7 @@ shape_text_with_font :: proc(
 
 // Shape text using the cached data
 shape_with_cache :: proc(
-	engine: ^Rune,
+	engine: ^Engine,
 	font: ^Font,
 	buffer: ^Shaping_Buffer,
 	cache: ^Shaping_Cache,
@@ -130,7 +130,7 @@ shape_text_basic_with_buffer :: proc(font: ^Font, buffer: ^Shaping_Buffer) -> (o
 
 // Convenience wrapper for retrieving and shaping a string
 shape_string :: proc(
-	engine: ^Rune,
+	engine: ^Engine,
 	font_id: Font_ID,
 	text: string,
 ) -> (

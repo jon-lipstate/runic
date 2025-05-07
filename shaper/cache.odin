@@ -34,7 +34,7 @@ Shaping_Cache :: struct {
 }
 
 get_or_create_shape_cache :: proc(
-	engine: ^Rune,
+	engine: ^Engine,
 	font: ^Font,
 	script: Script_Tag,
 	language: Language_Tag,

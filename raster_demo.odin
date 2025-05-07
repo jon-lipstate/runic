@@ -67,8 +67,8 @@ main :: proc() {
 		spall_buffer = spall.buffer_create(buffer_backing, u32(sync.current_thread_id()))
 		defer spall.buffer_destroy(&spall_ctx, &spall_buffer)
 
-	/////////////////////////////////////////////////////////////////////
-	// fmt.printf("Memory After Spall %v KiB\n", track.total_memory_allocated / 1024)
+		/////////////////////////////////////////////////////////////////////
+		// fmt.printf("Memory After Spall %v KiB\n", track.total_memory_allocated / 1024)
 	}
 
 	// Load and register a font
@@ -123,7 +123,7 @@ test_specific_glyphs :: proc(font: ^ttf.Font) {
 	}
 }
 
-test_text_rendering :: proc(engine: ^shaper.Rune, font_id: shaper.Font_ID, font: ^ttf.Font) {
+test_text_rendering :: proc(engine: ^shaper.Engine, font_id: shaper.Font_ID, font: ^ttf.Font) {
 	// single sub ؛ arabic semi colon
 	//test_text := "مرحباً"
 	test_text := "Áffinity"
@@ -251,14 +251,18 @@ render_text :: proc(
 		x_offset := int(f32(buffer.positions[i].x_offset) * scale)
 		y_offset := int(f32(buffer.positions[i].y_offset) * scale)
 
-		extracted_simple, ok := hinter.hinter_program_hint_glyph(hinter_program, glyph_id, context.temp_allocator)
+		extracted_simple, ok := hinter.hinter_program_hint_glyph(
+			hinter_program,
+			glyph_id,
+			context.temp_allocator,
+		)
 		assert(ok)
 		extracted: ttf.Extracted_Glyph = extracted_simple
-	outline, ook := ttf.create_outline_from_extracted(glyf, &extracted)
-	if !ook {
-		fmt.println("Failed to create contour")
-		return false
-	}
+		outline, ook := ttf.create_outline_from_extracted(glyf, &extracted)
+		if !ook {
+			fmt.println("Failed to create contour")
+			return false
+		}
 		defer ttf.destroy_glyph_outline(&outline)
 
 		// Skip empty glyphs (spaces, etc.) but apply advance

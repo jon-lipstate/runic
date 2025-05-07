@@ -14,7 +14,7 @@ Font_Identity :: struct {
 	width:  ttf.Font_Width,
 	slant:  ttf.Font_Slant,
 }
-Rune :: struct {
+Engine :: struct {
 	// Font management
 	loaded_fonts:     map[Font_ID]Font_Identity,
 	_next_font_id:    uint,
@@ -43,67 +43,67 @@ Rune :: struct {
 }
 
 // Create a new Rune font engine instance
-create_engine :: proc(allocator := context.allocator, max_buffers: uint = 4) -> ^Rune {
+create_engine :: proc(allocator := context.allocator, max_buffers: uint = 4) -> ^Engine {
 	context.allocator = allocator
 
 
-	r := new(Rune, allocator)
-	if r == nil {return nil}
+	e := new(Engine, allocator)
+	if e == nil {return nil}
 
 	// Initialize maps
-	r.loaded_fonts = make(map[Font_ID]Font_Identity, allocator)
-	r.caches = make(map[Shaping_Cache_Key]Shaping_Cache, allocator)
+	e.loaded_fonts = make(map[Font_ID]Font_Identity, allocator)
+	e.caches = make(map[Shaping_Cache_Key]Shaping_Cache, allocator)
 
 	// Initialize buffer pool
-	r.buffer_pool = make([dynamic]^Shaping_Buffer, 0, max_buffers, allocator)
-	r.max_buffers = max_buffers
-	append(&r.buffer_pool, create_shaping_buffer())
+	e.buffer_pool = make([dynamic]^Shaping_Buffer, 0, max_buffers, allocator)
+	e.max_buffers = max_buffers
+	append(&e.buffer_pool, create_shaping_buffer())
 
 	// Set default values
-	r.default_script = .latn
-	r.default_language = .dflt
-	r.default_features = create_feature_set(.liga, .clig, .kern)
+	e.default_script = .latn
+	e.default_language = .dflt
+	e.default_features = create_feature_set(.liga, .clig, .kern)
 
 	// Store allocator for future use
-	r.allocator = allocator
+	e.allocator = allocator
 
-	return r
+	return e
 }
 
 // Destroy a Rune font engine and free all resources
-destroy_engine :: proc(r: ^Rune) {
-	if r == nil {return}
+destroy_engine :: proc(e: ^Engine) {
+	if e == nil {return}
 
-	context.allocator = r.allocator
+	context.allocator = e.allocator
 
 	// Clean up loaded fonts
-	for _, identity in r.loaded_fonts {
+	for _, identity in e.loaded_fonts {
 		ttf.destroy_font(identity.font)
 	}
-	delete(r.loaded_fonts)
+	delete(e.loaded_fonts)
 
 	// Clean up shaping caches
-	for _, cache in r.caches {
+	for _, cache in e.caches {
 		if cache.gsub_lookups != nil {delete(cache.gsub_lookups)}
 		if cache.gpos_lookups != nil {delete(cache.gpos_lookups)}
 	}
-	delete(r.caches)
+	delete(e.caches)
 
-	for buffer in r.buffer_pool {
+	for buffer in e.buffer_pool {
 		destroy_shaping_buffer(buffer)
 	}
-	delete(r.buffer_pool)
+	delete(e.buffer_pool)
 
-	free(r, r.allocator)
+	free(e, e.allocator)
 }
 
-get_buffer :: proc(engine: ^Rune) -> ^Shaping_Buffer {
+get_buffer :: proc(e: ^Engine) -> ^Shaping_Buffer {
 	// Try to get a buffer from the pool
-	if len(engine.buffer_pool) > 0 {
+	if len(e.buffer_pool) > 0 {
 		// Pop the last buffer from the pool
-		last_idx := len(engine.buffer_pool) - 1
-		buffer := engine.buffer_pool[last_idx]
-		pop(&engine.buffer_pool)
+		last_idx := len(e.buffer_pool) - 1
+		buffer := e.buffer_pool[last_idx]
+		pop(&e.buffer_pool)
 
 		// Clear the buffer for reuse
 		clear_shaping_buffer(buffer)
@@ -114,15 +114,15 @@ get_buffer :: proc(engine: ^Rune) -> ^Shaping_Buffer {
 	return create_shaping_buffer()
 }
 // Return a buffer to the pool
-release_buffer :: proc(engine: ^Rune, buffer: ^Shaping_Buffer) {
+release_buffer :: proc(e: ^Engine, buffer: ^Shaping_Buffer) {
 	if buffer == nil {return}
 
 	// Clear the buffer before returning it to the pool
 	clear_shaping_buffer(buffer)
 
 	// If we have room in the pool, add it
-	if uint(len(engine.buffer_pool)) < engine.max_buffers {
-		append(&engine.buffer_pool, buffer)
+	if uint(len(e.buffer_pool)) < e.max_buffers {
+		append(&e.buffer_pool, buffer)
 	} else {
 		// Pool is full, destroy the buffer
 		destroy_shaping_buffer(buffer)
@@ -131,14 +131,14 @@ release_buffer :: proc(engine: ^Rune, buffer: ^Shaping_Buffer) {
 
 
 // Register a loaded font with the engine
-register_font :: proc(engine: ^Rune, font: ^Font, name: string = "") -> (id: Font_ID, ok: bool) {
-	if engine == nil || font == nil {
+register_font :: proc(e: ^Engine, font: ^Font, name: string = "") -> (id: Font_ID, ok: bool) {
+	if e == nil || font == nil {
 		return {}, false
 	}
 
 	// Generate a new unique ID
-	font_id := Font_ID(engine._next_font_id)
-	engine._next_font_id += 1
+	font_id := Font_ID(e._next_font_id)
+	e._next_font_id += 1
 
 	// Create identity
 	identity := Font_Identity {
@@ -153,7 +153,7 @@ register_font :: proc(engine: ^Rune, font: ^Font, name: string = "") -> (id: Fon
 	}
 
 	// Register in loaded fonts
-	engine.loaded_fonts[font_id] = identity
+	e.loaded_fonts[font_id] = identity
 
 	return font_id, true
 }

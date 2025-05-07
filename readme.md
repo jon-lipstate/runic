@@ -1,35 +1,37 @@
-# Rune
+# Runic
 
 A high-performance OpenType font engine written in the Odin programming language. Focused on primarily on Latin scripts (I don't have the time to devote to other scripts at present).
 
 ## Overview
 
-Rune is a lightweight OpenType font engine designed for performance and correctness. Taking inspiration from popular libraries like HarfBuzz and ttf-parser, Rune provides a (mostly) comprehensive solution for font loading, text shaping, and glyph rasterization.
+Runic is a lightweight OpenType font engine designed for performance and correctness. Taking inspiration from popular libraries like HarfBuzz and ttf-parser, Rune provides a (mostly) comprehensive solution for font loading, text shaping, and glyph rasterization.
+
+## TODO:
+
+Autodetect if font can render a set of text (detect_script + cmap tests) - Find which of loaded fonts is best fit (incl kerning pairs)
+feaorumund updated grapheme clustering (in core:text/table)
 
 ## Key Features
 
--   **Pure Odin implementation** - No dependencies (other than `core`)
--   **Minimal memory allocations** - Data is kept in its native binary format until needed
--   **OpenType support** - Handles complex OpenType features including:
+-   **Pure Odin Implementation** - No dependencies (other than `core`)
+-   **OpenType Support** - Handles complex OpenType features including:
     -   Glyph substitution (GSUB) for ligatures, alternates, etc.
     -   Glyph positioning (GPOS) for kerning, mark attachment, etc.
     -   Advanced typographic features like contextual alternates
--   **Comprehensive text shaping** - Proper handling of complex scripts including Arabic, Devanagari, and more
--   **Efficient glyph rasterization** - Convert outlines to bitmap images with:
+-   **Comprehensive Text Shaping** - Proper handling of complex scripts including Arabic, Devanagari, and more
+-   **Efficient Glyph Rasterization** - Convert outlines to bitmap images with:
     -   Point-first parsing approach for better performance
     -   Support for composite glyphs
     -   Line and quadratic Bezier curve rendering
--   **Modular design** - Use only the components you need
+-   **Modular Design** - Use only the components you need
 
 ## Status
 
 The project is work in progress and not stable. Very little testing has been conducted. Subpackage organization is also not stable (e.g. The script and language tags probably need moved from `shaper` to `ttf`). Claude 3.7 was used to help get the project up and running, and that is both a boon (I would not have written this, as I had no prior font experience) and curse; the entire codebase still needs re-reviewed and refactored, which will be an ongoing process.
 
-Glyf Hinting Instructions are not implemented (Need to implement a TrueType VM).
-
 ## Architecture
 
-Rune is divided into several functional components:
+Runic is divided into several functional components:
 
 ## Core Unicode Handling (`unicode` package)
 
