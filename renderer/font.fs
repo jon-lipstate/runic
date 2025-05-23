@@ -17,7 +17,7 @@ uniform vec4 color;
 // Controls for debugging and exploring:
 uniform float antiAliasingWindowSize = 1.0;
 uniform bool enableSuperSamplingAntiAliasing = true;
-uniform bool enableControlPointsVisualization = false;
+uniform bool enableControlPointsVisualization = true;
 
 in vec2 uv;
 flat in int bufferIndex;
@@ -88,7 +88,6 @@ vec2 rotate(vec2 v) {
 
 void main() {
     float alpha = 0;
-
     vec2 inverseDiameter = 1.0 / (antiAliasingWindowSize * fwidth(uv));
 
     Glyph glyph = loadGlyph(bufferIndex);
@@ -100,6 +99,7 @@ void main() {
         vec2 p2 = curve.p2 - uv;
 
         alpha += computeCoverage(inverseDiameter.x, p0, p1, p2);
+        
         if (enableSuperSamplingAntiAliasing) {
             alpha += computeCoverage(inverseDiameter.y, rotate(p0), rotate(p1), rotate(p2));
         }

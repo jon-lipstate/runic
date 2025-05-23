@@ -461,6 +461,9 @@ add_glyph_to_gpu_cache :: proc(face: ^OpenGL_Font_Face_Instance, glyph_id: ttf.G
 	start_index := len(face.buffer_curves)
 	curve_count := 0
 
+	// Calculate the scale factor to normalize font units to 0-1 space
+	scale := 1.0 / f32(face.face.font.units_per_em)
+
 	for contour in outline.contours {
 		for segment in contour.segments {
 			switch s in segment {
@@ -469,9 +472,9 @@ add_glyph_to_gpu_cache :: proc(face: ^OpenGL_Font_Face_Instance, glyph_id: ttf.G
 				// This ensures the "curve" is actually straight
 				midpoint := [2]f32{(s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2}
 				curve := Buffer_Curve {
-					start   = s.a,
-					control = midpoint,
-					end     = s.b,
+					start   = s.a * scale,
+					control = midpoint * scale,
+					end     = s.b * scale,
 				}
 				append(&face.buffer_curves, curve)
 				curve_count += 1
@@ -479,9 +482,9 @@ add_glyph_to_gpu_cache :: proc(face: ^OpenGL_Font_Face_Instance, glyph_id: ttf.G
 			case ttf.Quad_Bezier_Segment:
 				// Already quadratic bezier - perfect!
 				curve := Buffer_Curve {
-					start   = s.a,
-					control = s.control,
-					end     = s.b,
+					start   = s.a * scale,
+					control = s.control * scale,
+					end     = s.b * scale,
 				}
 				append(&face.buffer_curves, curve)
 				curve_count += 1
@@ -506,6 +509,17 @@ add_glyph_to_gpu_cache :: proc(face: ^OpenGL_Font_Face_Instance, glyph_id: ttf.G
 
 // 2. GPU buffer upload
 upload_gpu_buffers :: proc(face: ^OpenGL_Font_Face_Instance) {
+	fmt.printf(
+		"DEBUG: Uploading %d curves, %d glyphs\n",
+		len(face.buffer_curves),
+		len(face.buffer_glyphs),
+	)
+
+	if len(face.buffer_curves) == 0 {
+		fmt.println("DEBUG: No curves to upload!")
+		return
+	}
+
 	// Upload curves buffer
 	gl.BindBuffer(gl.TEXTURE_BUFFER, face.curves_buffer)
 	gl.BufferData(
@@ -525,6 +539,7 @@ upload_gpu_buffers :: proc(face: ^OpenGL_Font_Face_Instance) {
 	)
 
 	gl.BindBuffer(gl.TEXTURE_BUFFER, 0)
+	check_gl_error("Buffer upload")
 }
 
 // 3. Main render function
@@ -539,9 +554,17 @@ render_text :: proc(
 	anti_alias_filter_size: f32 = 1.0,
 	use_super_sampling := true,
 ) {
-	if len(buf.glyphs) == 0 {return}
+	if len(buf.glyphs) == 0 {
+		fmt.println("DEBUG: No glyphs in buffer!")
+		return
+	}
+
+	// fmt.printf("DEBUG: Rendering %d glyphs\n", len(buf.glyphs))
+	// fmt.printf("DEBUG: First glyph ID: %v\n", buf.glyphs[0].glyph_id)
 
 	gl.UseProgram(r.shader_program)
+	check_gl_error("UseProgram")
+
 	defer gl.UseProgram(0)
 	// we need these as pointers, so re-declare to get access as a variable instead of parameter:
 	projection := projection
@@ -559,7 +582,9 @@ render_text :: proc(
 	// Set uniforms
 	proj_loc := gl.GetUniformLocation(r.shader_program, "projection")
 	gl.UniformMatrix4fv(proj_loc, 1, false, &projection[0, 0])
-
+	if proj_loc == -1 {
+		fmt.println("DEBUG: Failed to find 'projection' uniform!")
+	}
 	view_loc := gl.GetUniformLocation(r.shader_program, "view")
 	gl.UniformMatrix4fv(view_loc, 1, false, &view[0, 0])
 
@@ -652,7 +677,15 @@ render_text :: proc(
 		pen.y += f32(position.y_advance) * face.scale_factor
 	}
 
-	if len(r.scratch_indices) == 0 {return}
+	if len(r.scratch_indices) == 0 {
+		fmt.println("DEBUG: No indices generated!")
+		return
+	}
+	// fmt.printf(
+	// 	"DEBUG: Generated %d vertices, %d indices\n",
+	// 	len(r.scratch_vertices),
+	// 	len(r.scratch_indices),
+	// )
 
 	// Upload vertex data (GL_STREAM_DRAW like Green Lightning)
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vbo)
@@ -681,4 +714,12 @@ render_text :: proc(
 	gl.DrawElements(gl.TRIANGLES, i32(len(r.scratch_indices)), gl.UNSIGNED_INT, nil)
 
 	gl.BindVertexArray(0)
+}
+
+
+check_gl_error :: proc(location: string) {
+	error := gl.GetError()
+	if error != gl.NO_ERROR {
+		fmt.printf("OpenGL error at %s: %d\n", location, error)
+	}
 }

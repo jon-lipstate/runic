@@ -13,7 +13,7 @@ import "core:os"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
 
-width: i32 = 1200
+width: i32 = 1600
 height: i32 = 800
 
 // Global state
@@ -31,12 +31,15 @@ enable_control_points_visualization: bool = false
 show_help: bool = true
 
 // Text to render
-main_text := `In the center of Fedora, that gray stone metropolis, stands a metal building
+xmain_text := `In the center of Fedora, that gray stone metropolis, stands a metal building
 with a crystal globe in every room. Looking into each globe, you see a blue
 city, the model of a different Fedora. These are the forms the city could have
 taken if, for one reason or another, it had not become what we see today.
 
 [from Invisible Cities by Italo Calvino]`
+
+
+main_text := `acetCQ&*`
 
 
 setup_transform :: proc() {
@@ -70,6 +73,11 @@ setup :: proc() -> bool {
 		fmt.println("Failed to load font")
 		return false
 	}
+	fmt.printf(
+		"DEBUG: Font loaded - units_per_em: %d, num_glyphs: %d\n",
+		font.units_per_em,
+		font.num_glyphs,
+	)
 
 	font_id, reg_ok := shaper.register_font(engine, font)
 	if !reg_ok {
@@ -79,7 +87,7 @@ setup :: proc() -> bool {
 
 	shape_ok, face_ok: bool
 	// Create font face for rendering
-	face, face_ok = create_font_face(&renderer, font, 48.0, .Normal, 96.0)
+	face, face_ok = create_font_face(&renderer, font, 350.0, .None, 96.0)
 	if !face_ok {
 		fmt.println("Failed to create font face")
 		return false
@@ -100,6 +108,24 @@ setup :: proc() -> bool {
 
 	init_drag_controller(&drag_controller, &transform)
 
+	// Test extracting a simple glyph (like 'A'):
+	test_glyph_id := ttf.Glyph(65) // 'A'
+	extracted, extract_ok := ttf.extract_glyph(face.glyf, test_glyph_id, context.temp_allocator)
+	if extract_ok {
+		switch &e in extracted {
+		case ttf.Extracted_Simple_Glyph:
+			fmt.printf(
+				"DEBUG: Extracted glyph 'A' - %d points, %d contours\n",
+				len(e.points),
+				len(e.contour_endpoints),
+			)
+		case ttf.Extracted_Compound_Glyph:
+			fmt.printf("DEBUG: Glyph 'A' is compound with %d components\n", len(e.components))
+		}
+	} else {
+		fmt.println("DEBUG: Failed to extract glyph 'A'!")
+	}
+
 	return true
 }
 
@@ -111,6 +137,37 @@ cleanup :: proc() {
 		shaper.destroy_engine(engine)
 	}
 	destroy_opengl_renderer(&renderer)
+}
+
+test_render_quad :: proc(r: ^OpenGL_Renderer) {
+	// Simple test vertices for a quad
+	test_vertices := []Vertex {
+		{{-0.5, -0.5}, {0, 0}, 0},
+		{{0.5, -0.5}, {1, 0}, 0},
+		{{0.5, 0.5}, {1, 1}, 0},
+		{{-0.5, 0.5}, {0, 1}, 0},
+	}
+
+	test_indices := []u32{0, 1, 2, 2, 3, 0}
+
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.vbo)
+	gl.BufferData(
+		gl.ARRAY_BUFFER,
+		len(test_vertices) * size_of(Vertex),
+		raw_data(test_vertices),
+		gl.STREAM_DRAW,
+	)
+
+	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.ebo)
+	gl.BufferData(
+		gl.ELEMENT_ARRAY_BUFFER,
+		len(test_indices) * size_of(u32),
+		raw_data(test_indices),
+		gl.STREAM_DRAW,
+	)
+
+	gl.BindVertexArray(r.vao)
+	gl.DrawElements(gl.TRIANGLES, i32(len(test_indices)), gl.UNSIGNED_INT, nil)
 }
 
 main :: proc() {
@@ -177,16 +234,37 @@ main :: proc() {
 
 		gl.ClearColor(0.0, 0.0, 0.0, 1.0)
 		gl.Clear(gl.COLOR_BUFFER_BIT)
-
+		gl.Disable(gl.DEPTH_TEST)
+		gl.Disable(gl.CULL_FACE)
 		// Draw background gradient
 		draw_background(background_shader)
 
 		// Calculate matrices
 		aspect := f32(fb_width) / f32(fb_height)
-		projection := get_projection_matrix(&transform, aspect)
-		view := get_view_matrix(&transform)
-		model := glsl.mat4(1.0)
-		// Render the text using our new renderer
+		// projection := get_projection_matrix(&transform, aspect)
+		// view := get_view_matrix(&transform)
+		// model := glsl.mat4Scale({100, 100, 100})
+		projection := matrix[4, 4]f32{
+			2.0 / f32(width), 0, 0, 0, 
+			0, 2.0 / f32(height), 0, 0, 
+			0, 0, -1, 0, 
+			0, 0, 0, 1, 
+		}
+		view := glsl.mat4(1)
+		model := glsl.mat4Translate({-f32(width) / 2, 0, 0})
+
+		// fmt.printf("DEBUG: Projection matrix:\n%v\n", projection)
+		// fmt.printf("DEBUG: View matrix:\n%v\n", view)
+		// fmt.printf("DEBUG: Model matrix:\n%v\n", model)
+
+		// fmt.printf(
+		// 	"DEBUG: Transform distance: %f, position: %v\n",
+		// 	transform.distance,
+		// 	transform.position,
+		// )
+
+		// test_font_shader(&renderer)
+
 		render_text(
 			&renderer,
 			face,
@@ -198,6 +276,12 @@ main :: proc() {
 			anti_aliasing_window_size,
 			enable_supersampling_anti_aliasing,
 		)
+
+		// test_render_quad(&renderer)
+
+		// viewport: [4]i32
+		// gl.GetIntegerv(gl.VIEWPORT, &viewport[0])
+		// fmt.printf("DEBUG: Viewport: %v\n", viewport)
 
 		// Draw help text if enabled
 		if show_help {
@@ -212,8 +296,151 @@ main :: proc() {
 
 		glfw.SwapBuffers(window)
 		glfw.PollEvents()
+		// if true do break
 	}
 }
+
+test_font_shader :: proc(r: ^OpenGL_Renderer) {
+	// Test your actual font shader with dummy data
+	gl.UseProgram(r.shader_program)
+	defer gl.UseProgram(0)
+
+	// Check if shader program is valid
+	if r.shader_program == 0 {
+		fmt.println("ERROR: Font shader program is 0!")
+		return
+	}
+
+	// Set up simple matrices
+	projection := glsl.mat4(1.0) // Identity
+	view := glsl.mat4(1.0)
+	model := glsl.mat4(1.0)
+	color := [4]f32{1, 0, 0, 1} // Red
+
+	// Set uniforms
+	proj_loc := gl.GetUniformLocation(r.shader_program, "projection")
+	view_loc := gl.GetUniformLocation(r.shader_program, "view")
+	model_loc := gl.GetUniformLocation(r.shader_program, "model")
+	color_loc := gl.GetUniformLocation(r.shader_program, "color")
+
+	fmt.printf(
+		"Font shader uniform locations: proj=%d, view=%d, model=%d, color=%d\n",
+		proj_loc,
+		view_loc,
+		model_loc,
+		color_loc,
+	)
+
+	if proj_loc == -1 || view_loc == -1 || model_loc == -1 || color_loc == -1 {
+		fmt.println("ERROR: Font shader uniforms not found!")
+		return
+	}
+
+	gl.UniformMatrix4fv(proj_loc, 1, false, &projection[0, 0])
+	gl.UniformMatrix4fv(view_loc, 1, false, &view[0, 0])
+	gl.UniformMatrix4fv(model_loc, 1, false, &model[0, 0])
+	gl.Uniform4fv(color_loc, 1, &color[0])
+
+	// Create simple test vertices that match your font Vertex struct
+	test_vertices := []Vertex {
+		{{-0.5, -0.5}, {0, 0}, 0}, // Bottom left
+		{{0.5, -0.5}, {1, 0}, 0}, // Bottom right
+		{{0.5, 0.5}, {1, 1}, 0}, // Top right
+		{{-0.5, 0.5}, {0, 1}, 0}, // Top left
+	}
+
+	test_indices := []u32{0, 1, 2, 2, 3, 0}
+
+	// Upload to your existing buffers
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.vbo)
+	gl.BufferData(
+		gl.ARRAY_BUFFER,
+		len(test_vertices) * size_of(Vertex),
+		raw_data(test_vertices),
+		gl.STREAM_DRAW,
+	)
+
+	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.ebo)
+	gl.BufferData(
+		gl.ELEMENT_ARRAY_BUFFER,
+		len(test_indices) * size_of(u32),
+		raw_data(test_indices),
+		gl.STREAM_DRAW,
+	)
+
+	gl.BindVertexArray(r.vao)
+	gl.DrawElements(gl.TRIANGLES, i32(len(test_indices)), gl.UNSIGNED_INT, nil)
+	gl.BindVertexArray(0)
+
+	error := gl.GetError()
+	fmt.printf("Font shader test GL error: %d\n", error)
+}
+
+test_basic_triangle :: proc(r: ^OpenGL_Renderer) {
+	// Hardcoded triangle vertices in NDC space (-1 to 1)
+	vertices := [][2]f32 {
+		{-0.5, -0.5}, // Bottom left
+		{0.5, -0.5}, // Bottom right  
+		{0.0, 0.5}, // Top center
+	}
+
+	// Very simple shader that ignores all matrices
+	simple_vert := `#version 330 core
+layout (location = 0) in vec2 pos;
+void main() {
+    gl_Position = vec4(pos, 0.0, 1.0);  // Direct to NDC
+}`
+
+
+	simple_frag := `#version 330 core
+out vec4 color;
+void main() {
+    color = vec4(1.0, 0.0, 0.0, 1.0);  // Pure red
+}`
+
+
+	program, ok := compile_shader_program(simple_vert, simple_frag)
+	if !ok {
+		fmt.println("Failed to compile simple shader")
+		return
+	}
+	defer gl.DeleteProgram(program)
+
+	// Create temporary VAO just for this test
+	test_vao, test_vbo: u32
+	gl.GenVertexArrays(1, &test_vao)
+	gl.GenBuffers(1, &test_vbo)
+	defer {
+		gl.DeleteVertexArrays(1, &test_vao)
+		gl.DeleteBuffers(1, &test_vbo)
+	}
+
+	gl.BindVertexArray(test_vao)
+	gl.BindBuffer(gl.ARRAY_BUFFER, test_vbo)
+	gl.BufferData(
+		gl.ARRAY_BUFFER,
+		len(vertices) * size_of([2]f32),
+		raw_data(vertices),
+		gl.STATIC_DRAW,
+	)
+
+	gl.EnableVertexAttribArray(0)
+	gl.VertexAttribPointer(0, 2, gl.FLOAT, false, size_of([2]f32), 0)
+
+	gl.UseProgram(program)
+	gl.DrawArrays(gl.TRIANGLES, 0, 3)
+	gl.UseProgram(0)
+
+	gl.BindVertexArray(0)
+
+	error := gl.GetError()
+	if error != gl.NO_ERROR {
+		fmt.printf("OpenGL error in simple triangle: %d\n", error)
+	} else {
+		fmt.println("DEBUG: Simple triangle rendered without GL errors")
+	}
+}
+
 
 // Create simple background shader
 create_background_shader :: proc() -> u32 {
