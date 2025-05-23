@@ -1,6 +1,7 @@
 package ttf
 
 import "../memory"
+import "core:fmt"
 
 IDENTITY_MATRIX :: matrix[2, 3]f32{
 	1.0, 0.0, 0.0, 
@@ -96,7 +97,7 @@ extract_simple_glyph :: proc(
 	on_curve := make([]bool, point_count, allocator)
 	defer if !ok {delete(on_curve)}
 
-	scratch := memory.arena_scratch({ allocator })
+	scratch := memory.arena_scratch({allocator})
 	flags := make([]Simple_Glyph_Flags, point_count, scratch)
 
 	// Calculate offsets for parsing
