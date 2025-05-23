@@ -9,6 +9,14 @@ import "base:runtime"
 import "core:math/linalg"
 import "../memory"
 
+// TODO: integrate into the hinter
+Hinting_Mode :: enum u8 {
+    None   = 0,  // No hinting - use original outlines
+    Light  = 1,  // Light hinting - preserve shape, minimal grid fitting
+    Normal = 2,  // Normal hinting - balance between shape and grid fitting
+    Full   = 3,  // Full hinting - maximum grid fitting 
+}
+
 make_multi :: memory.make_multi
 Make_Multi :: memory.Make_Multi
 

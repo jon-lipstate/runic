@@ -96,11 +96,11 @@ get_glyph_from_subtable :: proc(
 	case .Byte_Encoding:
 		// Format 0 - only handles codepoints 0-255
 		if codepoint <= 0xFF {
-			fmt.println("Byte_Encoding")
+			// fmt.println("Byte_Encoding")
 			f0 := subtable.data.(^Format0)
 			glyph_id := get_format0_glyph_id(data, f0, u8(codepoint))
 			// Debug: print values
-			fmt.printf("Format 0 lookup: codepoint %d -> glyph %d\n", codepoint, glyph_id)
+			// fmt.printf("Format 0 lookup: codepoint %d -> glyph %d\n", codepoint, glyph_id)
 			return Glyph(glyph_id), glyph_id != 0
 		}
 

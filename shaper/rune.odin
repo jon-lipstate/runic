@@ -4,6 +4,7 @@ import ttf "../ttf"
 import "core:mem"
 
 Font_ID :: distinct uint
+
 Font_Identity :: struct {
 	id:     Font_ID,
 	font:   ^Font,
@@ -14,6 +15,7 @@ Font_Identity :: struct {
 	width:  ttf.Font_Width,
 	slant:  ttf.Font_Slant,
 }
+
 Engine :: struct {
 	// Font management
 	loaded_fonts:     map[Font_ID]Font_Identity,
@@ -129,7 +131,7 @@ release_buffer :: proc(e: ^Engine, buffer: ^Shaping_Buffer) {
 	}
 }
 
-
+// TODO: GET RID oF font_id as a type and just use `^Font` as the key
 // Register a loaded font with the engine
 register_font :: proc(e: ^Engine, font: ^Font, name: string = "") -> (id: Font_ID, ok: bool) {
 	if e == nil || font == nil {
