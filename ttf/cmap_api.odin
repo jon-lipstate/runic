@@ -1,6 +1,5 @@
 package ttf
 
-import "core:fmt"
 
 get_glyph_from_cmap :: proc(font: ^Font, codepoint: rune) -> (Glyph, bool) {
 	cmap_table, ok := get_table(font, .cmap, load_cmap_table, CMAP_Table)

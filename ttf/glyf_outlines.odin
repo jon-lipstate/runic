@@ -332,7 +332,7 @@ create_segments_for_contour :: proc(
 		return false
 	}
 
-	// Generate segments (same logic as before)
+	// Generate segments
 	current := start_idx
 	total_points := len(processed_points)
 
@@ -390,7 +390,7 @@ create_segments_for_contour :: proc(
 		}
 	}
 
-	// Validation (same as before)
+	// Validation
 	if len(contour.segments) > 0 {
 		first_seg := contour.segments[0]
 		last_seg := contour.segments[len(contour.segments) - 1]
@@ -425,188 +425,6 @@ create_segments_for_contour :: proc(
 				}
 				append(&contour.segments, close_segment)
 			}
-		}
-	}
-
-	return true
-}
-
-// Create segments directly from point data
-xcreate_segments_for_contour :: proc(
-	contour: ^Contour,
-	points: [][2]i16,
-	on_curve: []bool,
-	transform: ^matrix[2, 3]f32,
-	allocator := context.allocator,
-) -> bool {
-	point_count := len(points)
-	if point_count < 2 {return false}
-
-	// PASS 1: Transform all points first
-	processed_points := make([dynamic][2]f32, 0, point_count * 2, allocator)
-	processed_on_curve := make([dynamic]bool, 0, point_count * 2, allocator)
-	defer delete(processed_points)
-	defer delete(processed_on_curve)
-
-	// Transform points
-	for i := 0; i < point_count; i += 1 {
-		x, y := f32(points[i][0]), f32(points[i][1])
-
-		// Apply transform if provided
-		if transform != nil {
-			tx := transform[0, 0] * x + transform[0, 1] * y + transform[0, 2]
-			ty := transform[1, 0] * x + transform[1, 1] * y + transform[1, 2]
-			x, y = tx, ty
-		}
-
-		append(&processed_points, [2]f32{x, y})
-		append(&processed_on_curve, on_curve[i])
-	}
-
-	// PASS 2: Add implied points between consecutive off-curve points
-	// We need to be careful about modifying the arrays during iteration
-	original_count := len(processed_points)
-	i := 0
-
-	for i < len(processed_on_curve) {
-		if !processed_on_curve[i] {
-			next_idx := (i + 1) % len(processed_on_curve)
-			if !processed_on_curve[next_idx] {
-				// Two consecutive off-curve points - add implied on-curve point
-				p1 := processed_points[i]
-				p2 := processed_points[next_idx]
-				midpoint := [2]f32{(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2}
-
-				// Insert after current point
-				insert_at(&processed_points, i + 1, midpoint)
-				insert_at(&processed_on_curve, i + 1, true)
-
-				// Skip the newly inserted point
-				i += 2
-				continue
-			}
-		}
-		i += 1
-	}
-
-	// PASS 3: Find first on-curve point to start from
-	start_idx := -1
-	for i := 0; i < len(processed_on_curve); i += 1 {
-		if processed_on_curve[i] {
-			start_idx = i
-			break
-		}
-	}
-
-	if start_idx == -1 {
-		fmt.println("ERROR: No on-curve points found in contour")
-		return false
-	}
-
-	// PASS 4: Generate segments
-	current := start_idx
-	total_points := len(processed_points)
-
-	for {
-		next := (current + 1) % total_points
-
-		if processed_on_curve[current] && processed_on_curve[next] {
-			// Line segment between two on-curve points
-			segment := Line_Segment {
-				a = processed_points[current],
-				b = processed_points[next],
-			}
-			append(&contour.segments, segment)
-			current = next
-
-		} else if processed_on_curve[current] && !processed_on_curve[next] {
-			// Quadratic bezier: on-curve -> off-curve -> on-curve
-			control_idx := next
-			end_idx := (control_idx + 1) % total_points
-
-			// Validate that the end point is on-curve
-			if !processed_on_curve[end_idx] {
-				fmt.printf(
-					"ERROR: Expected on-curve point at %d after control point %d\n",
-					end_idx,
-					control_idx,
-				)
-				return false
-			}
-
-			segment := Quad_Bezier_Segment {
-				a       = processed_points[current],
-				control = processed_points[control_idx],
-				b       = processed_points[end_idx],
-			}
-			append(&contour.segments, segment)
-			current = end_idx
-
-		} else {
-			fmt.printf(
-				"ERROR: Unexpected point configuration - current=%d (on_curve=%v), next=%d (on_curve=%v)\n",
-				current,
-				processed_on_curve[current],
-				next,
-				processed_on_curve[next],
-			)
-			return false
-		}
-
-		// CRITICAL FIX: Check for completion AFTER creating the segment
-		if current == start_idx {
-			// We've completed the loop - the last segment should connect back to start
-			break
-		}
-
-		// Safety check to prevent infinite loops
-		if len(contour.segments) > total_points + 2 {
-			fmt.printf(
-				"ERROR: Too many segments created (%d), possible infinite loop\n",
-				len(contour.segments),
-			)
-			return false
-		}
-	}
-
-	// PASS 5: Validate closure (should not need manual closing segment now)
-	if len(contour.segments) > 0 {
-		first_seg := contour.segments[0]
-		last_seg := contour.segments[len(contour.segments) - 1]
-
-		first_point: [2]f32
-		last_point: [2]f32
-
-		switch s in first_seg {
-		case Line_Segment:
-			first_point = s.a
-		case Quad_Bezier_Segment:
-			first_point = s.a
-		}
-
-		switch s in last_seg {
-		case Line_Segment:
-			last_point = s.b
-		case Quad_Bezier_Segment:
-			last_point = s.b
-		}
-
-		// Check closure with small tolerance for floating point precision
-		distance := math.sqrt(
-			math.pow(first_point[0] - last_point[0], 2) +
-			math.pow(first_point[1] - last_point[1], 2),
-		)
-		if distance > 0.1 {
-			fmt.printf("WARNING: Contour not properly closed, distance=%f\n", distance)
-			// Note: We should NOT need to add a closing segment if the logic above is correct
-			// Adding one anyway for now, but this indicates a bug in the segment generation
-			close_segment := Line_Segment {
-				a = last_point,
-				b = first_point,
-			}
-			append(&contour.segments, close_segment)
-		} else {
-			// fmt.printf("DEBUG: Contour properly closed, distance=%f\n", distance)
 		}
 	}
 

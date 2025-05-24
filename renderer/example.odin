@@ -8,8 +8,6 @@ import "core:fmt"
 import "core:math"
 import la "core:math/linalg"
 import glsl "core:math/linalg/glsl"
-import "core:mem"
-import "core:os"
 import "core:strings"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
@@ -34,6 +32,9 @@ enable_control_points_visualization: bool = false
 show_help: bool = true
 help_font_size: f32 = 24
 
+// This example is not optimized UI code - simply a testbed for rendering; 
+// for example help text is reshaped every frame and so on
+
 // Text to render
 main_text := `Runic Font Shaper & Renderer - 100% Odin-Native`
 font_size: f32 = 12
@@ -46,9 +47,8 @@ setup_transform :: proc() {
 }
 
 setup :: proc() -> bool {
-	// enable_debug_output()
+	// enable_debug_output() // FIXME: this is exploding
 
-	// Create our new renderer
 	renderer_ok: bool
 	renderer, renderer_ok = create_opengl_renderer(context.allocator)
 	if !renderer_ok {
@@ -69,11 +69,11 @@ setup :: proc() -> bool {
 		fmt.println("Failed to load font")
 		return false
 	}
-	fmt.printf(
-		"DEBUG: Font loaded - units_per_em: %d, num_glyphs: %d\n",
-		font.units_per_em,
-		font.num_glyphs,
-	)
+	// fmt.printf(
+	// 	"DEBUG: Font loaded - units_per_em: %d, num_glyphs: %d\n",
+	// 	font.units_per_em,
+	// 	font.num_glyphs,
+	// )
 	reg_ok: bool
 	font_id, reg_ok = shaper.register_font(engine, font)
 	if !reg_ok {
@@ -131,9 +131,6 @@ main :: proc() {
 	}
 	defer glfw.Terminate()
 
-	major, minor, rev := glfw.GetVersion()
-	fmt.printf("GLFW Version: %d.%d.%d\n", major, minor, rev)
-
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3)
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 3)
 	glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
@@ -156,11 +153,12 @@ main :: proc() {
 	// Load OpenGL functions
 	gl.load_up_to(3, 3, glfw.gl_set_proc_address)
 
-	// Print OpenGL version
-	fmt.println("OpenGL Version:", gl.GetString(gl.VERSION))
-	fmt.println("OpenGL Vendor:", gl.GetString(gl.VENDOR))
-	fmt.println("OpenGL Renderer:", gl.GetString(gl.RENDERER))
-	fmt.println("GLSL Version:", gl.GetString(gl.SHADING_LANGUAGE_VERSION))
+	// major, minor, rev := glfw.GetVersion()
+	// fmt.printf("GLFW Version: %d.%d.%d\n", major, minor, rev)
+	// fmt.println("OpenGL Version:", gl.GetString(gl.VERSION))
+	// fmt.println("OpenGL Vendor:", gl.GetString(gl.VENDOR))
+	// fmt.println("OpenGL Renderer:", gl.GetString(gl.RENDERER))
+	// fmt.println("GLSL Version:", gl.GetString(gl.SHADING_LANGUAGE_VERSION))
 
 	// Callbacks
 	glfw.SetFramebufferSizeCallback(window, size_callback)
@@ -358,16 +356,15 @@ draw_background :: proc(shader: u32) {
 
 // Render help text overlay
 render_help_text :: proc(font_id: shaper.Font_ID, screen_width, screen_height: i32) {
-	// Render help text overlay
 	// Calculate positioning
 	line_height := help_font_size * 1.2 // 20% spacing between lines
 	margin := f32(10)
 	start_y := f32(screen_height) - margin * 2
 
 	// Set up 2D projection for UI overlay
-	projection := glsl.mat4Ortho3d(0, f32(screen_width), 0, f32(screen_height), -1, 1)
-	view := glsl.mat4(1.0)
-	model := glsl.mat4(1.0)
+	// projection := glsl.mat4Ortho3d(0, f32(screen_width), 0, f32(screen_height), -1, 1)
+	// view := glsl.mat4(1.0)
+	// model := glsl.mat4(1.0)
 
 	// Semi-transparent color for help text
 	help_color := [4]f32{f32(199) / 255, f32(101) / 255, f32(15) / 255, 0.5}
@@ -419,7 +416,7 @@ size_callback :: proc "c" (window: glfw.WindowHandle, w, h: c.int) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Transform and UI code (unchanged from your original)
+// Transform and UI code
 
 Transform :: struct {
 	fovy:     f32,
@@ -478,8 +475,8 @@ unproject_mouse_position_to_xy_plane :: proc "c" (
 	x, y: f64,
 	result: ^glsl.vec3,
 ) -> bool {
-	width, height := glfw.GetWindowSize(window)
-	width_f64, height_f64 := f64(width), f64(height)
+	w, h := glfw.GetWindowSize(window)
+	width_f64, height_f64 := f64(w), f64(h)
 
 	projection := get_projection_matrix(controller.transform, f32(width_f64 / height_f64))
 	view := get_view_matrix(controller.transform)
@@ -550,8 +547,8 @@ mouse_button_callback :: proc "c" (window: glfw.WindowHandle, button, action, mo
 mouse_callback :: proc "c" (window: glfw.WindowHandle, x_pos, y_pos: f64) {
 	if drag_controller.active_action == .None {return}
 
-	width, height := glfw.GetWindowSize(window)
-	width_f64, height_f64 := f64(width), f64(height)
+	w, h := glfw.GetWindowSize(window)
+	width_f64, height_f64 := f64(w), f64(h)
 
 	delta_x := x_pos - drag_controller.drag_x
 	delta_y := y_pos - drag_controller.drag_y
@@ -615,8 +612,8 @@ mouse_callback :: proc "c" (window: glfw.WindowHandle, x_pos, y_pos: f64) {
 			x := drag_controller.transform.position.x
 			y := drag_controller.transform.position.y
 			delta := target - drag_controller.drag_target
-			drag_controller.transform.position.x = x + delta.x //math.clamp(x + delta.x, -4.0, 4.0)
-			drag_controller.transform.position.y = y + delta.y //math.clamp(y + delta.y, -4.0, 4.0)
+			drag_controller.transform.position.x = x + delta.x
+			drag_controller.transform.position.y = y + delta.y
 		}
 	} else if drag_controller.active_action == .Rotate_Turntable {
 		size := math.min(width_f64, height_f64)
@@ -636,11 +633,6 @@ scroll_callback :: proc "c" (window: glfw.WindowHandle, x_offset, y_offset: f64)
 	zoom_scale :: 10
 	factor := math.clamp(1.0 - f32(y_offset) / zoom_scale, 0.1, 1.9)
 	drag_controller.transform.distance = drag_controller.transform.distance * factor
-	// math.clamp(
-	// 	drag_controller.transform.distance * factor,
-	// 	0.01,
-	// 	10.0,
-	// )
 }
 
 key_callback :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods: i32) {
@@ -665,8 +657,8 @@ key_callback :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods
 		enable_supersampling_anti_aliasing = !enable_supersampling_anti_aliasing
 	case glfw.KEY_M:
 		multi_sampling = (multi_sampling + 1) % 2
-		mode_names := []string{"Analytical AA", "4x Multi-sample"}
-		fmt.printf("Multi-sampling: %s\n", mode_names[multi_sampling])
+		mode_names := []string{"Analytical", "8x Multi-sampling"}
+		fmt.printf("AA Mode: %s\n", mode_names[multi_sampling])
 	case glfw.KEY_0:
 		anti_aliasing_window_size = 0
 
@@ -695,7 +687,7 @@ process_input :: proc(window: glfw.WindowHandle) {
 	}
 }
 
-// Debug output (unchanged from your original)
+// Debug output 
 enable_debug_output :: proc() {
 	when ODIN_DEBUG {
 		fmt.println("enable debug output")
@@ -720,18 +712,17 @@ debug_callback :: proc "c" (
 	message: cstring,
 	userParam: rawptr,
 ) {
-	return
-	// if message == nil {return}
-	// context = runtime.default_context()
-	// source_str := debug_source_string(source)
-	// type_str := debug_type_string(type)
-	// severity_str := debug_severity_string(severity)
+	if message == nil {return}
+	context = runtime.default_context()
+	source_str := debug_source_string(source)
+	type_str := debug_type_string(type)
+	severity_str := debug_severity_string(severity)
 
-	// if severity == gl.DEBUG_SEVERITY_NOTIFICATION {
-	// 	fmt.printf("GL DEBUG: %s [%s] %s: %s\n", severity_str, source_str, type_str, message)
-	// } else {
-	// 	fmt.printf("GL DEBUG: %s [%s] %s: %s\n", severity_str, source_str, type_str, message)
-	// }
+	if severity == gl.DEBUG_SEVERITY_NOTIFICATION {
+		fmt.printf("GL DEBUG: %s [%s] %s: %s\n", severity_str, source_str, type_str, message)
+	} else {
+		fmt.printf("GL DEBUG: %s [%s] %s: %s\n", severity_str, source_str, type_str, message)
+	}
 }
 
 debug_source_string :: proc(source: u32) -> string {
@@ -794,9 +785,7 @@ debug_severity_string :: proc(severity: u32) -> string {
 }
 
 
-help_text := `Drag and drop a .ttf or .otf file to change the font
-Controls:
-right drag (or CTRL drag) - move
+help_text := `right drag (or CTRL drag) - move
 left drag - trackball rotate  
 middle drag - turntable rotate
 scroll wheel - zoom
@@ -806,6 +795,7 @@ A - toggle 2D anti-aliasing
 S - reset anti-aliasing settings
 C - toggle control points visualization
 R - reset view
+M - Cycle AA Modes
 H - toggle help
 Z - Print Transform State`
 

@@ -18,7 +18,7 @@ uniform vec4 color;
 uniform float antiAliasingWindowSize = 1.0;
 uniform bool enableSuperSamplingAntiAliasing = true;
 uniform bool enableControlPointsVisualization = false;
-uniform bool enableQuadBorderVisualization = true;
+uniform bool enableQuadBorderVisualization = false;
 
 // Multi-sampling control
 uniform int multiSampleMode = 0; // 0=Analytical, 1=4x multi-sample
@@ -162,30 +162,41 @@ void main() {
         }
         
     } else {
-        // 4x Multi-sampling with binary coverage
-        vec2 fw = clamp(fwidth(uv), 0.001, 0.02);
+       vec2 f_uv = abs(vec2(dFdx(uv.x), dFdy(uv.y)));
         
-        vec2 offsets[4] = vec2[4](
-            vec2(-0.25, -0.25), vec2( 0.25, -0.25), 
-            vec2(-0.25,  0.25), vec2( 0.25,  0.25)
+        // Better 8-sample pattern
+        vec2 samples[8] = vec2[8](
+            (vec2(0.5/8.0, 0.5/8.0) - 0.5) * f_uv,
+            (vec2(1.5/8.0, 4.5/8.0) - 0.5) * f_uv,
+            (vec2(2.5/8.0, 8.5/8.0) - 0.5) * f_uv,
+            (vec2(3.5/8.0, 3.5/8.0) - 0.5) * f_uv,
+            (vec2(4.5/8.0, 6.5/8.0) - 0.5) * f_uv,
+            (vec2(5.5/8.0, 1.5/8.0) - 0.5) * f_uv,
+            (vec2(6.5/8.0, 7.5/8.0) - 0.5) * f_uv,
+            (vec2(7.5/8.0, 2.5/8.0) - 0.5) * f_uv
         );
         
-        Glyph glyph = loadGlyph(bufferIndex);
+        float coverages[8] = float[8](0,0,0,0,0,0,0,0);
         
-        for (int s = 0; s < 4; s++) {
-            vec2 sample_offset = offsets[s] * fw;
+        Glyph glyph = loadGlyph(bufferIndex);
+        for (int i = 0; i < glyph.count; i++) {
+            Curve curve = loadCurve(glyph.start + i);
+            vec2 p0 = curve.p0 - uv;
+            vec2 p1 = curve.p1 - uv;
+            vec2 p2 = curve.p2 - uv;
             
-            for (int i = 0; i < glyph.count; i++) {
-                Curve curve = loadCurve(glyph.start + i);
-                vec2 p0 = curve.p0 - (uv + sample_offset);
-                vec2 p1 = curve.p1 - (uv + sample_offset);
-                vec2 p2 = curve.p2 - (uv + sample_offset);
-                
-                alpha += computeBinaryCoverage(p0, p1, p2);
+            for (int c = 0; c < 8; c++) {
+                vec2 offset = samples[c];
+                coverages[c] += computeBinaryCoverage(p0 - offset, p1 - offset, p2 - offset);
             }
         }
         
-        alpha /= 4.0;
+        // Resolve: count non-zero samples
+        float resolved = 0.0;
+        for (int c = 0; c < 8; c++) {
+            resolved += (coverages[c] != 0.0) ? 1.0 : 0.0;
+        }
+        alpha = resolved / 8.0;
     }
 
     alpha = clamp(alpha, 0.0, 1.0);
@@ -194,7 +205,7 @@ void main() {
     // Quad border visualization for debugging padding issues
     if (enableQuadBorderVisualization) {
         vec2 fw = fwidth(uv);
-        float border_width = 3.0 * max(fw.x, fw.y); // 3 pixel border for visibility
+        float border_width = 1.0 * max(fw.x, fw.y); // 3 pixel border for visibility
         
         // Distance to each edge of the UV quad
         float dist_left = uv.x;
@@ -213,7 +224,6 @@ void main() {
         }
         
         // Debug: Also show UV coordinates as colors to see the mapping
-        // Uncomment this line to see UV mapping:
         // result = vec4(uv.x, uv.y, 0.0, 1.0); // R=X, G=Y coordinate
     }
 

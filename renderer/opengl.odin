@@ -79,8 +79,8 @@ create_opengl_renderer :: proc(allocator: mem.Allocator) -> (OpenGL_Renderer, bo
 	}
 
 	// Create empty VAO for rendering quads
-	gl.GenVertexArrays(1, &r.vao) // no vertices bound here - TODO: move to explicit vertex buffers so one call can render entire strings; current method calls draw on each glyph
-	if r.vao == 0 { 	// no vertices bound here - TODO: move to explicit vertex buffers so one call can render entire strings; current method calls draw on each glyph
+	gl.GenVertexArrays(1, &r.vao) // no vertices bound here - TODO: ?? move to explicit vertex buffers so one call can render entire strings; current method calls draw on each glyph
+	if r.vao == 0 {
 		fmt.eprintln("Failed to create VAO")
 		return r, false
 	}
@@ -93,7 +93,7 @@ create_opengl_renderer :: proc(allocator: mem.Allocator) -> (OpenGL_Renderer, bo
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vbo)
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.ebo)
 
-	// Setup vertex attributes (matches your Vertex struct)
+	// Setup vertex attributes
 	gl.EnableVertexAttribArray(0)
 	gl.VertexAttribPointer(0, 2, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, position))
 	gl.EnableVertexAttribArray(1)
@@ -110,7 +110,7 @@ create_opengl_renderer :: proc(allocator: mem.Allocator) -> (OpenGL_Renderer, bo
 	program, ok := compile_shader_program(vertex_shader_source, fragment_shader_source)
 	if !ok {
 		fmt.eprintln("Failed to compile font shader program")
-		gl.DeleteVertexArrays(1, &r.vao) // no vertices bound here - TODO: move to explicit vertex buffers so one call can render entire strings; current method calls draw on each glyph
+		gl.DeleteVertexArrays(1, &r.vao)
 		return r, false
 	}
 
@@ -234,13 +234,15 @@ create_font_face :: proc(
 	instance.scale_factor = size_px / f32(font.units_per_em)
 
 	// Initialize dynamic arrays
-	curve_err, glyph_err, index_err: mem.Allocator_Error
+	curve_err, glyph_err, index_err, bounds_err: mem.Allocator_Error
 	instance.buffer_curves, curve_err = make([dynamic]Buffer_Curve, r.allocator)
 	instance.buffer_glyphs, glyph_err = make([dynamic]Buffer_Glyph, r.allocator)
+	instance.glyph_bounds, bounds_err = make([dynamic]Glyph_Bound, r.allocator)
 	instance.glyph_to_index, index_err = make(map[ttf.Glyph]int, 0, r.allocator)
 	assert(curve_err == nil, "allocation error")
 	assert(glyph_err == nil, "allocation error")
 	assert(index_err == nil, "allocation error")
+	assert(bounds_err == nil, "allocation error")
 
 	// Create OpenGL resources
 	gl.GenBuffers(1, &instance.curves_buffer)
@@ -290,7 +292,7 @@ get_font_instance :: proc(
 
 destroy_opengl_renderer :: proc(r: ^OpenGL_Renderer) {
 	// Clean up all font instances
-	for key, instance in r.font_instances {
+	for _, instance in r.font_instances {
 		destroy_font_face(instance)
 	}
 	delete(r.font_instances)
@@ -335,6 +337,7 @@ destroy_font_face :: proc(instance: ^OpenGL_Font_Face_Instance) {
 	delete(instance.buffer_curves)
 	delete(instance.buffer_glyphs)
 	delete(instance.glyph_to_index)
+	delete(instance.glyph_bounds)
 
 	free(instance)
 }
@@ -389,7 +392,7 @@ render_text_2d :: proc(
 
 	model := translation * rotation_mat * scale_mat
 
-	render_text(r, face, buf, projection, view, model, color, 1)
+	render_text(r, face, buf, projection, view, model, color, 1, true, 1)
 }
 
 // 3D convenience wrapper for billboards
@@ -424,7 +427,6 @@ create_billboard_matrix :: proc(world_pos, camera_pos, camera_up: [3]f32) -> mat
 }
 
 
-// 1. Glyph outline to curves conversion
 add_glyph_to_gpu_cache :: proc(face: ^OpenGL_Font_Face_Instance, glyph_id: ttf.Glyph) -> bool {
 	// Check if already cached
 	if _, exists := face.glyph_to_index[glyph_id]; exists {return true}
@@ -439,67 +441,68 @@ add_glyph_to_gpu_cache :: proc(face: ^OpenGL_Font_Face_Instance, glyph_id: ttf.G
 	outline, outline_ok := ttf.create_outline_from_extracted(
 		face.glyf,
 		&extracted,
-		nil, // No transform - use font units
+		nil,
 		context.temp_allocator,
 	)
-	if !outline_ok {
-		return false
-	}
+	if !outline_ok {return false}
 
 	// Handle empty glyphs (whitespace, etc.)
 	if outline.is_empty || len(outline.contours) == 0 {
-		// Create empty glyph entry
+		// Empty glyph
 		glyph_entry := Buffer_Glyph {
 			start = i32(len(face.buffer_curves)),
 			count = 0,
 		}
-		glyph_index := len(face.buffer_glyphs)
+
 		append(&face.buffer_glyphs, glyph_entry)
+		append(&face.glyph_bounds, Glyph_Bound{})
+
+		glyph_index := len(face.buffer_glyphs) - 1
 		face.glyph_to_index[glyph_id] = glyph_index
 		face.needs_upload = true
 		return true
-	}
-	glyph_bounds := outline.bounds
-	glyph_width := f32(glyph_bounds.max[0] - glyph_bounds.min[0])
-	glyph_height := f32(glyph_bounds.max[1] - glyph_bounds.min[1])
 
-	// Add padding for anti-aliasing
+	}
+
+	// Calculate padded bounds for this glyph
+	glyph_bounds := outline.bounds
 	padding := 0.1 * f32(face.face.font.units_per_em)
-	glyph_left := f32(glyph_bounds.min[0]) - padding
-	glyph_bottom := f32(glyph_bounds.min[1]) - padding
-	padded_width := glyph_width + 2.0 * padding
-	padded_height := glyph_height + 2.0 * padding
+
+	bounds_left := f32(glyph_bounds.min[0]) - padding
+	bounds_bottom := f32(glyph_bounds.min[1]) - padding
+	bounds_width := f32(glyph_bounds.max[0] - glyph_bounds.min[0]) + 2.0 * padding
+	bounds_height := f32(glyph_bounds.max[1] - glyph_bounds.min[1]) + 2.0 * padding
 
 	start_index := len(face.buffer_curves)
 	curve_count := 0
 
-	// Convert curves to 0-1 space relative to this glyph's padded bounds
+	// Convert curves to 0-1 space relative to this glyph's bounds
 	for contour in outline.contours {
 		for segment in contour.segments {
 			switch s in segment {
 			case ttf.Line_Segment:
 				midpoint := [2]f32{(s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2}
 				curve := Buffer_Curve {
-					start   = normalize_point_to_uv(
+					start   = normalize_to_uv(
 						s.a,
-						glyph_left,
-						glyph_bottom,
-						padded_width,
-						padded_height,
+						bounds_left,
+						bounds_bottom,
+						bounds_width,
+						bounds_height,
 					),
-					control = normalize_point_to_uv(
+					control = normalize_to_uv(
 						midpoint,
-						glyph_left,
-						glyph_bottom,
-						padded_width,
-						padded_height,
+						bounds_left,
+						bounds_bottom,
+						bounds_width,
+						bounds_height,
 					),
-					end     = normalize_point_to_uv(
+					end     = normalize_to_uv(
 						s.b,
-						glyph_left,
-						glyph_bottom,
-						padded_width,
-						padded_height,
+						bounds_left,
+						bounds_bottom,
+						bounds_width,
+						bounds_height,
 					),
 				}
 				append(&face.buffer_curves, curve)
@@ -507,26 +510,26 @@ add_glyph_to_gpu_cache :: proc(face: ^OpenGL_Font_Face_Instance, glyph_id: ttf.G
 
 			case ttf.Quad_Bezier_Segment:
 				curve := Buffer_Curve {
-					start   = normalize_point_to_uv(
+					start   = normalize_to_uv(
 						s.a,
-						glyph_left,
-						glyph_bottom,
-						padded_width,
-						padded_height,
+						bounds_left,
+						bounds_bottom,
+						bounds_width,
+						bounds_height,
 					),
-					control = normalize_point_to_uv(
+					control = normalize_to_uv(
 						s.control,
-						glyph_left,
-						glyph_bottom,
-						padded_width,
-						padded_height,
+						bounds_left,
+						bounds_bottom,
+						bounds_width,
+						bounds_height,
 					),
-					end     = normalize_point_to_uv(
+					end     = normalize_to_uv(
 						s.b,
-						glyph_left,
-						glyph_bottom,
-						padded_width,
-						padded_height,
+						bounds_left,
+						bounds_bottom,
+						bounds_width,
+						bounds_height,
 					),
 				}
 				append(&face.buffer_curves, curve)
@@ -535,81 +538,33 @@ add_glyph_to_gpu_cache :: proc(face: ^OpenGL_Font_Face_Instance, glyph_id: ttf.G
 		}
 	}
 
-	// Store the glyph's world-space bounds for rendering
+	// Store glyph entry and bounds (parallel arrays)
 	glyph_entry := Buffer_Glyph {
 		start = i32(start_index),
 		count = i32(curve_count),
 	}
-	glyph_index := len(face.buffer_glyphs)
+	glyph_bound := Glyph_Bound {
+		left   = bounds_left,
+		bottom = bounds_bottom,
+		width  = bounds_width,
+		height = bounds_height,
+	}
+
 	append(&face.buffer_glyphs, glyph_entry)
+	append(&face.glyph_bounds, glyph_bound)
+
+	glyph_index := len(face.buffer_glyphs) - 1
 	face.glyph_to_index[glyph_id] = glyph_index
 	face.needs_upload = true
-
-	// // Convert outline segments to GPU curves
-	// start_index := len(face.buffer_curves)
-	// curve_count := 0
-
-	// // Calculate the scale factor to normalize font units to 0-1 space
-	// scale := 1.0 / f32(face.face.font.units_per_em)
-
-	// for contour in outline.contours {
-	// 	for segment in contour.segments {
-	// 		switch s in segment {
-	// 		case ttf.Line_Segment:
-	// 			// Convert line to quadratic bezier (control point at midpoint)
-	// 			// This ensures the "curve" is actually straight
-	// 			midpoint := [2]f32{(s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2}
-	// 			curve := Buffer_Curve {
-	// 				start   = s.a * scale,
-	// 				control = midpoint * scale,
-	// 				end     = s.b * scale,
-	// 			}
-	// 			append(&face.buffer_curves, curve)
-	// 			curve_count += 1
-
-	// 		case ttf.Quad_Bezier_Segment:
-	// 			// Already quadratic bezier - perfect!
-	// 			curve := Buffer_Curve {
-	// 				start   = s.a * scale,
-	// 				control = s.control * scale,
-	// 				end     = s.b * scale,
-	// 			}
-	// 			append(&face.buffer_curves, curve)
-	// 			curve_count += 1
-	// 		}
-	// 	}
-	// }
-
-	// // Create glyph entry pointing to our curves
-	// glyph_entry := Buffer_Glyph {
-	// 	start = i32(start_index),
-	// 	count = i32(curve_count),
-	// }
-	// glyph_index := len(face.buffer_glyphs)
-	// append(&face.buffer_glyphs, glyph_entry)
-
-	// // Map glyph ID to buffer index for fast lookup
-	// face.glyph_to_index[glyph_id] = glyph_index
-	// face.needs_upload = true
 
 	return true
 }
 
-normalize_point_to_uv :: proc(
-	point: [2]f32,
-	bounds_left, bounds_bottom, bounds_width, bounds_height: f32,
-) -> [2]f32 {
-	return {(point[0] - bounds_left) / bounds_width, (point[1] - bounds_bottom) / bounds_height}
+normalize_to_uv :: proc(point: [2]f32, left, bottom, width, height: f32) -> [2]f32 {
+	return {(point[0] - left) / width, (point[1] - bottom) / height}
 }
-
 // 2. GPU buffer upload
 upload_gpu_buffers :: proc(face: ^OpenGL_Font_Face_Instance) {
-	// fmt.printf(
-	// 	"DEBUG: Uploading %d curves, %d glyphs\n",
-	// 	len(face.buffer_curves),
-	// 	len(face.buffer_glyphs),
-	// )
-
 	if len(face.buffer_curves) == 0 {
 		fmt.println("DEBUG: No curves to upload!")
 		return
@@ -656,9 +611,6 @@ render_text :: proc(
 		return
 	}
 
-	// fmt.printf("DEBUG: Rendering %d glyphs\n", len(buf.glyphs))
-	// fmt.printf("DEBUG: First glyph ID: %v\n", buf.glyphs[0].glyph_id)
-
 	gl.UseProgram(r.shader_program)
 	check_gl_error("UseProgram")
 
@@ -700,7 +652,7 @@ render_text :: proc(
 	color_loc := gl.GetUniformLocation(r.shader_program, "color")
 	gl.Uniform4fv(color_loc, 1, &color[0])
 
-	// Bind texture buffers (once per draw call)
+	// Bind texture buffers
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.BindTexture(gl.TEXTURE_BUFFER, face.glyphs_tbo)
 	glyphs_loc := gl.GetUniformLocation(r.shader_program, "glyphs")
@@ -726,56 +678,30 @@ render_text :: proc(
 		if !exists {continue}
 
 		// Use metrics from the shaped glyph
-		metrics := glyph_info.metrics
+		bounds := face.glyph_bounds[buffer_index]
 
-		// Calculate quad bounds and UVs
-		left := f32(metrics.bbox.min[0]) * face.scale_factor
-		bottom := f32(metrics.bbox.min[1]) * face.scale_factor
-		right := f32(metrics.bbox.max[0]) * face.scale_factor
-		top := f32(metrics.bbox.max[1]) * face.scale_factor
-
+		// Calculate screen position using stored bounds
 		x := pen.x + f32(position.x_offset) * face.scale_factor
 		y := pen.y + f32(position.y_offset) * face.scale_factor
 
-		// UV coordinates in em units
-		uv_span := metrics.bbox.max - metrics.bbox.min
-		uv_scale := f32(face.face.font.units_per_em)
-		uv_left := f32(metrics.bbox.min[0]) / f32(face.face.font.units_per_em)
-		uv_bottom := f32(metrics.bbox.min[1]) / f32(face.face.font.units_per_em)
-		uv_right := f32(metrics.bbox.max[0]) / f32(face.face.font.units_per_em)
-		uv_top := f32(metrics.bbox.max[1]) / f32(face.face.font.units_per_em)
+		// Use stored bounds for quad positioning
+		left := x + bounds.left * face.scale_factor
+		bottom := y + bounds.bottom * face.scale_factor
+		right := left + bounds.width * face.scale_factor
+		top := bottom + bounds.height * face.scale_factor
 
-		// Add dilation for anti-aliasing
-		dilation := 0.1 / uv_scale
-		uv_left -= dilation
-		uv_bottom -= dilation
-		uv_right += dilation
-		uv_top += dilation
+		// UVs are always 0-1 now (curves are normalized per-glyph)
+		uv_left, uv_bottom: f32 = 0.0, 0.0
+		uv_right, uv_top: f32 = 1.0, 1.0
 
-		dilation_px := dilation * f32(face.face.font.units_per_em) * face.scale_factor
-		left -= dilation_px
-		bottom -= dilation_px
-		right += dilation_px
-		top += dilation_px
-
-		// Generate quad
+		// Generate quad 
 		base_vertex := u32(len(r.scratch_vertices))
-
 		append(
 			&r.scratch_vertices,
-			Vertex{{x + left, y + bottom}, {uv_left, uv_bottom}, i32(buffer_index)},
-		)
-		append(
-			&r.scratch_vertices,
-			Vertex{{x + right, y + bottom}, {uv_right, uv_bottom}, i32(buffer_index)},
-		)
-		append(
-			&r.scratch_vertices,
-			Vertex{{x + right, y + top}, {uv_right, uv_top}, i32(buffer_index)},
-		)
-		append(
-			&r.scratch_vertices,
-			Vertex{{x + left, y + top}, {uv_left, uv_top}, i32(buffer_index)},
+			Vertex{{left, bottom}, {uv_left, uv_bottom}, i32(buffer_index)},
+			Vertex{{right, bottom}, {uv_right, uv_bottom}, i32(buffer_index)},
+			Vertex{{right, top}, {uv_right, uv_top}, i32(buffer_index)},
+			Vertex{{left, top}, {uv_left, uv_top}, i32(buffer_index)},
 		)
 
 		append(&r.scratch_indices, base_vertex + 0, base_vertex + 1, base_vertex + 2)
@@ -789,11 +715,6 @@ render_text :: proc(
 		fmt.println("DEBUG: No indices generated!")
 		return
 	}
-	// fmt.printf(
-	// 	"DEBUG: Generated %d vertices, %d indices\n",
-	// 	len(r.scratch_vertices),
-	// 	len(r.scratch_indices),
-	// )
 
 	// Upload vertex data (GL_STREAM_DRAW like Green Lightning)
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vbo)

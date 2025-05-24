@@ -1,7 +1,6 @@
 package shaper
 
 import ttf "../ttf"
-import "core:unicode/utf8"
 Shaping_Buffer :: struct {
 	// Input text data
 	text:              string, // Original text
