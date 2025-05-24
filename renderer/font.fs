@@ -17,7 +17,11 @@ uniform vec4 color;
 // Controls for debugging and exploring:
 uniform float antiAliasingWindowSize = 1.0;
 uniform bool enableSuperSamplingAntiAliasing = true;
-uniform bool enableControlPointsVisualization = true;
+uniform bool enableControlPointsVisualization = false;
+uniform bool enableQuadBorderVisualization = true;
+
+// Multi-sampling control
+uniform int multiSampleMode = 0; // 0=Analytical, 1=4x multi-sample
 
 in vec2 uv;
 flat in int bufferIndex;
@@ -44,12 +48,14 @@ float computeCoverage(float inverseDiameter, vec2 p0, vec2 p1, vec2 p2) {
     if (p0.y > 0 && p1.y > 0 && p2.y > 0) return 0.0;
     if (p0.y < 0 && p1.y < 0 && p2.y < 0) return 0.0;
 
+    // Note: Simplified from abc formula by extracting a factor of (-2) from b.
     vec2 a = p0 - 2*p1 + p2;
     vec2 b = p0 - p1;
     vec2 c = p0;
 
     float t0, t1;
     if (abs(a.y) >= 1e-5) {
+        // Quadratic segment, solve abc formula to find roots.
         float radicand = b.y*b.y - a.y*c.y;
         if (radicand <= 0) return 0.0;
     
@@ -57,6 +63,7 @@ float computeCoverage(float inverseDiameter, vec2 p0, vec2 p1, vec2 p2) {
         t0 = (b.y - s) / a.y;
         t1 = (b.y + s) / a.y;
     } else {
+        // Linear segment, avoid division by a.y, which is near zero.
         float t = p0.y / (p0.y - p2.y);
         if (p0.y < p2.y) {
             t0 = -1.0;
@@ -82,39 +89,140 @@ float computeCoverage(float inverseDiameter, vec2 p0, vec2 p1, vec2 p2) {
     return alpha;
 }
 
+// Binary coverage for multi-sampling (no anti-aliasing window)
+float computeBinaryCoverage(vec2 p0, vec2 p1, vec2 p2) {
+    if (p0.y > 0 && p1.y > 0 && p2.y > 0) return 0.0;
+    if (p0.y < 0 && p1.y < 0 && p2.y < 0) return 0.0;
+
+    vec2 a = p0 - 2*p1 + p2;
+    vec2 b = p0 - p1;
+    vec2 c = p0;
+
+    float t0, t1;
+    if (abs(a.y) >= 1e-5) {
+        float radicand = b.y*b.y - a.y*c.y;
+        if (radicand <= 0) return 0.0;
+        
+        float s = sqrt(radicand);
+        t0 = (b.y - s) / a.y;
+        t1 = (b.y + s) / a.y;
+    } else {
+        float t = p0.y / (p0.y - p2.y);
+        if (p0.y < p2.y) {
+            t0 = -1.0;
+            t1 = t;
+        } else {
+            t0 = t;
+            t1 = -1.0;
+        }
+    }
+
+    float winding = 0.0;
+    
+    if (t0 >= 0 && t0 < 1) {
+        float x = (a.x*t0 - 2.0*b.x)*t0 + c.x;
+        if (x >= 0) winding += 1.0;  // Binary: either inside or outside
+    }
+
+    if (t1 >= 0 && t1 < 1) {
+        float x = (a.x*t1 - 2.0*b.x)*t1 + c.x;
+        if (x >= 0) winding -= 1.0;  // Binary: either inside or outside
+    }
+
+    return winding;
+}
+
 vec2 rotate(vec2 v) {
     return vec2(v.y, -v.x);
 }
 
 void main() {
     float alpha = 0;
-    vec2 inverseDiameter = 1.0 / (antiAliasingWindowSize * fwidth(uv));
 
-    Glyph glyph = loadGlyph(bufferIndex);
-    for (int i = 0; i < glyph.count; i++) {
-        Curve curve = loadCurve(glyph.start + i);
+    if (multiSampleMode == 0) {
+        // ORIGINAL: Single sample with analytical anti-aliasing
+        vec2 inverseDiameter = 1.0 / (antiAliasingWindowSize * fwidth(uv));
 
-        vec2 p0 = curve.p0 - uv;
-        vec2 p1 = curve.p1 - uv;
-        vec2 p2 = curve.p2 - uv;
+        Glyph glyph = loadGlyph(bufferIndex);
+        for (int i = 0; i < glyph.count; i++) {
+            Curve curve = loadCurve(glyph.start + i);
 
-        alpha += computeCoverage(inverseDiameter.x, p0, p1, p2);
-        
-        if (enableSuperSamplingAntiAliasing) {
-            alpha += computeCoverage(inverseDiameter.y, rotate(p0), rotate(p1), rotate(p2));
+            vec2 p0 = curve.p0 - uv;
+            vec2 p1 = curve.p1 - uv;
+            vec2 p2 = curve.p2 - uv;
+
+            alpha += computeCoverage(inverseDiameter.x, p0, p1, p2);
+            if (enableSuperSamplingAntiAliasing) {
+                alpha += computeCoverage(inverseDiameter.y, rotate(p0), rotate(p1), rotate(p2));
+            }
         }
-    }
 
-    if (enableSuperSamplingAntiAliasing) {
-        alpha *= 0.5;
+        if (enableSuperSamplingAntiAliasing) {
+            alpha *= 0.5;
+        }
+        
+    } else {
+        // 4x Multi-sampling with binary coverage
+        vec2 fw = clamp(fwidth(uv), 0.001, 0.02);
+        
+        vec2 offsets[4] = vec2[4](
+            vec2(-0.25, -0.25), vec2( 0.25, -0.25), 
+            vec2(-0.25,  0.25), vec2( 0.25,  0.25)
+        );
+        
+        Glyph glyph = loadGlyph(bufferIndex);
+        
+        for (int s = 0; s < 4; s++) {
+            vec2 sample_offset = offsets[s] * fw;
+            
+            for (int i = 0; i < glyph.count; i++) {
+                Curve curve = loadCurve(glyph.start + i);
+                vec2 p0 = curve.p0 - (uv + sample_offset);
+                vec2 p1 = curve.p1 - (uv + sample_offset);
+                vec2 p2 = curve.p2 - (uv + sample_offset);
+                
+                alpha += computeBinaryCoverage(p0, p1, p2);
+            }
+        }
+        
+        alpha /= 4.0;
     }
 
     alpha = clamp(alpha, 0.0, 1.0);
     result = color * alpha;
 
+    // Quad border visualization for debugging padding issues
+    if (enableQuadBorderVisualization) {
+        vec2 fw = fwidth(uv);
+        float border_width = 3.0 * max(fw.x, fw.y); // 3 pixel border for visibility
+        
+        // Distance to each edge of the UV quad
+        float dist_left = uv.x;
+        float dist_right = 1.0 - uv.x;
+        float dist_bottom = uv.y;
+        float dist_top = 1.0 - uv.y;
+        
+        // Find minimum distance to any edge
+        float dist_to_edge = min(min(dist_left, dist_right), min(dist_bottom, dist_top));
+        
+        // Only show border pixels (near edge but not filled)
+        if (dist_to_edge < border_width) {
+            // Mix red with existing color instead of replacing
+            result = vec4(1.0, 0.0, 0.0, 1.0); // Pure red border for debugging
+            return; // Early return to make border clearly visible
+        }
+        
+        // Debug: Also show UV coordinates as colors to see the mapping
+        // Uncomment this line to see UV mapping:
+        // result = vec4(uv.x, uv.y, 0.0, 1.0); // R=X, G=Y coordinate
+    }
+
+    // Control points visualization for debugging
     if (enableControlPointsVisualization) {
         vec2 fw = fwidth(uv);
         float r = 4.0 * 0.5 * (fw.x + fw.y);
+        
+        Glyph glyph = loadGlyph(bufferIndex);
         for (int i = 0; i < glyph.count; i++) {
             Curve curve = loadCurve(glyph.start + i);
 
@@ -123,12 +231,12 @@ void main() {
             vec2 p2 = curve.p2 - uv;
 
             if (dot(p0, p0) < r*r || dot(p2, p2) < r*r) {
-                result = vec4(0, 1, 0, 1);
+                result = vec4(0, 1, 0, 1);  // Green for on-curve points
                 return;
             }
 
             if (dot(p1, p1) < r*r) {
-                result = vec4(1, 0, 1, 1);
+                result = vec4(1, 0, 1, 1);  // Magenta for control points
                 return;
             }
         }

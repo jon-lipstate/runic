@@ -10,6 +10,7 @@ import la "core:math/linalg"
 import glsl "core:math/linalg/glsl"
 import "core:mem"
 import "core:os"
+import "core:strings"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
 
@@ -22,29 +23,24 @@ drag_controller: DragController
 renderer: OpenGL_Renderer
 engine: ^shaper.Engine
 face: ^OpenGL_Font_Face_Instance
+help_face: ^OpenGL_Font_Face_Instance
 shaped_text: ^shaper.Shaping_Buffer
-
+font_id: shaper.Font_ID
 // UI state
 anti_aliasing_window_size: f32 = 1.0
 enable_supersampling_anti_aliasing: bool = true
+multi_sampling: i32 = 0
 enable_control_points_visualization: bool = false
 show_help: bool = true
+help_font_size: f32 = 24
 
 // Text to render
-xmain_text := `In the center of Fedora, that gray stone metropolis, stands a metal building
-with a crystal globe in every room. Looking into each globe, you see a blue
-city, the model of a different Fedora. These are the forms the city could have
-taken if, for one reason or another, it had not become what we see today.
-
-[from Invisible Cities by Italo Calvino]`
-
-
-main_text := `acetCQ&*`
-
+main_text := `Runic Font Shaper & Renderer - 100% Odin-Native`
+font_size: f32 = 12
 
 setup_transform :: proc() {
-	transform.fovy = math.to_radians_f32(60.0)
-	transform.distance = 3.0
+	transform.fovy = math.to_radians_f32(45.0)
+	transform.distance = 5
 	transform.rotation = glsl.mat4(1.0)
 	transform.position = glsl.vec4(0.0)
 }
@@ -78,21 +74,27 @@ setup :: proc() -> bool {
 		font.units_per_em,
 		font.num_glyphs,
 	)
-
-	font_id, reg_ok := shaper.register_font(engine, font)
+	reg_ok: bool
+	font_id, reg_ok = shaper.register_font(engine, font)
 	if !reg_ok {
 		fmt.println("Failed to register font")
 		return false
 	}
 
-	shape_ok, face_ok: bool
+	shape_ok, face_ok, help_ok: bool
 	// Create font face for rendering
-	face, face_ok = create_font_face(&renderer, font, 350.0, .None, 96.0)
+	face, face_ok = create_font_face(&renderer, font, font_size, .None, 96.0)
 	if !face_ok {
 		fmt.println("Failed to create font face")
 		return false
 	}
 
+	help_face, help_ok = create_font_face(&renderer, font, help_font_size, .Normal, 96.0)
+	if !help_ok {
+		fmt.println("Failed to create help font face")
+		return false
+	}
+	help_lines = strings.split(help_text, "\n")
 	// Shape the text
 	shaped_text, shape_ok = shaper.shape_text_with_font(engine, font_id, main_text, .latn, .dflt)
 	if !shape_ok {
@@ -108,24 +110,6 @@ setup :: proc() -> bool {
 
 	init_drag_controller(&drag_controller, &transform)
 
-	// Test extracting a simple glyph (like 'A'):
-	test_glyph_id := ttf.Glyph(65) // 'A'
-	extracted, extract_ok := ttf.extract_glyph(face.glyf, test_glyph_id, context.temp_allocator)
-	if extract_ok {
-		switch &e in extracted {
-		case ttf.Extracted_Simple_Glyph:
-			fmt.printf(
-				"DEBUG: Extracted glyph 'A' - %d points, %d contours\n",
-				len(e.points),
-				len(e.contour_endpoints),
-			)
-		case ttf.Extracted_Compound_Glyph:
-			fmt.printf("DEBUG: Glyph 'A' is compound with %d components\n", len(e.components))
-		}
-	} else {
-		fmt.println("DEBUG: Failed to extract glyph 'A'!")
-	}
-
 	return true
 }
 
@@ -139,36 +123,6 @@ cleanup :: proc() {
 	destroy_opengl_renderer(&renderer)
 }
 
-test_render_quad :: proc(r: ^OpenGL_Renderer) {
-	// Simple test vertices for a quad
-	test_vertices := []Vertex {
-		{{-0.5, -0.5}, {0, 0}, 0},
-		{{0.5, -0.5}, {1, 0}, 0},
-		{{0.5, 0.5}, {1, 1}, 0},
-		{{-0.5, 0.5}, {0, 1}, 0},
-	}
-
-	test_indices := []u32{0, 1, 2, 2, 3, 0}
-
-	gl.BindBuffer(gl.ARRAY_BUFFER, r.vbo)
-	gl.BufferData(
-		gl.ARRAY_BUFFER,
-		len(test_vertices) * size_of(Vertex),
-		raw_data(test_vertices),
-		gl.STREAM_DRAW,
-	)
-
-	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.ebo)
-	gl.BufferData(
-		gl.ELEMENT_ARRAY_BUFFER,
-		len(test_indices) * size_of(u32),
-		raw_data(test_indices),
-		gl.STREAM_DRAW,
-	)
-
-	gl.BindVertexArray(r.vao)
-	gl.DrawElements(gl.TRIANGLES, i32(len(test_indices)), gl.UNSIGNED_INT, nil)
-}
 
 main :: proc() {
 	if !glfw.Init() {
@@ -214,6 +168,7 @@ main :: proc() {
 	glfw.SetCursorPosCallback(window, mouse_callback)
 	glfw.SetScrollCallback(window, scroll_callback)
 	glfw.SetKeyCallback(window, key_callback)
+	glfw.SwapInterval(1)
 
 	if !setup() {
 		fmt.println("Failed to set up")
@@ -225,6 +180,7 @@ main :: proc() {
 	// Create background shader for the gradient
 	background_shader := create_background_shader()
 	defer gl.DeleteProgram(background_shader)
+
 
 	for !glfw.WindowShouldClose(window) {
 		process_input(window)
@@ -241,29 +197,21 @@ main :: proc() {
 
 		// Calculate matrices
 		aspect := f32(fb_width) / f32(fb_height)
-		// projection := get_projection_matrix(&transform, aspect)
-		// view := get_view_matrix(&transform)
-		// model := glsl.mat4Scale({100, 100, 100})
-		projection := matrix[4, 4]f32{
-			2.0 / f32(width), 0, 0, 0, 
-			0, 2.0 / f32(height), 0, 0, 
-			0, 0, -1, 0, 
-			0, 0, 0, 1, 
-		}
-		view := glsl.mat4(1)
-		model := glsl.mat4Translate({-f32(width) / 2, 0, 0})
+		projection := get_projection_matrix(&transform, aspect)
+		// projection := glsl.mat4Ortho3d(0, f32(fb_width), 0, f32(fb_height), -1, 1)
+		view := get_view_matrix(&transform)
+		// model := glsl.mat4Scale({10.0, 10.0, 10.0})
+		text_scale: f32 = 0.1 // Adjust this value
+		model := glsl.mat4Scale({text_scale, text_scale, 1.0})
 
-		// fmt.printf("DEBUG: Projection matrix:\n%v\n", projection)
-		// fmt.printf("DEBUG: View matrix:\n%v\n", view)
-		// fmt.printf("DEBUG: Model matrix:\n%v\n", model)
-
-		// fmt.printf(
-		// 	"DEBUG: Transform distance: %f, position: %v\n",
-		// 	transform.distance,
-		// 	transform.position,
-		// )
-
-		// test_font_shader(&renderer)
+		// projection := matrix[4, 4]f32{
+		// 	2.0 / f32(width), 0, 0, 0, 
+		// 	0, 2.0 / f32(height), 0, 0, 
+		// 	0, 0, -1, 0, 
+		// 	0, 0, 0, 1, 
+		// }
+		// view := glsl.mat4(1)
+		// // model := glsl.mat4Translate({-f32(width) / 2, 0, 0})
 
 		render_text(
 			&renderer,
@@ -275,17 +223,78 @@ main :: proc() {
 			{1.0, 1.0, 1.0, 1.0}, // white text
 			anti_aliasing_window_size,
 			enable_supersampling_anti_aliasing,
+			multi_sampling,
+			enable_control_points_visualization,
 		)
-
-		// test_render_quad(&renderer)
-
-		// viewport: [4]i32
-		// gl.GetIntegerv(gl.VIEWPORT, &viewport[0])
-		// fmt.printf("DEBUG: Viewport: %v\n", viewport)
+		render_text(
+			&renderer,
+			face,
+			shaped_text,
+			projection,
+			view,
+			model,
+			{1.0, 1.0, 1.0, 1.0}, // white text
+			anti_aliasing_window_size,
+			enable_supersampling_anti_aliasing,
+			multi_sampling,
+			enable_control_points_visualization,
+		)
+		render_text(
+			&renderer,
+			face,
+			shaped_text,
+			projection,
+			view,
+			model,
+			{1.0, 1.0, 1.0, 1.0}, // white text
+			anti_aliasing_window_size,
+			enable_supersampling_anti_aliasing,
+			multi_sampling,
+			enable_control_points_visualization,
+		)
+		render_text(
+			&renderer,
+			face,
+			shaped_text,
+			projection,
+			view,
+			model,
+			{1.0, 1.0, 1.0, 1.0}, // white text
+			anti_aliasing_window_size,
+			enable_supersampling_anti_aliasing,
+			multi_sampling,
+			enable_control_points_visualization,
+		)
+		render_text(
+			&renderer,
+			face,
+			shaped_text,
+			projection,
+			view,
+			model,
+			{1.0, 1.0, 1.0, 1.0}, // white text
+			anti_aliasing_window_size,
+			enable_supersampling_anti_aliasing,
+			multi_sampling,
+			enable_control_points_visualization,
+		)
+		render_text(
+			&renderer,
+			face,
+			shaped_text,
+			projection,
+			view,
+			model,
+			{1.0, 1.0, 1.0, 1.0}, // white text
+			anti_aliasing_window_size,
+			enable_supersampling_anti_aliasing,
+			multi_sampling,
+			enable_control_points_visualization,
+		)
 
 		// Draw help text if enabled
 		if show_help {
-			render_help_text(fb_width, fb_height)
+			render_help_text(font_id, fb_width, fb_height)
 		}
 
 		// Check for OpenGL errors
@@ -300,149 +309,6 @@ main :: proc() {
 	}
 }
 
-test_font_shader :: proc(r: ^OpenGL_Renderer) {
-	// Test your actual font shader with dummy data
-	gl.UseProgram(r.shader_program)
-	defer gl.UseProgram(0)
-
-	// Check if shader program is valid
-	if r.shader_program == 0 {
-		fmt.println("ERROR: Font shader program is 0!")
-		return
-	}
-
-	// Set up simple matrices
-	projection := glsl.mat4(1.0) // Identity
-	view := glsl.mat4(1.0)
-	model := glsl.mat4(1.0)
-	color := [4]f32{1, 0, 0, 1} // Red
-
-	// Set uniforms
-	proj_loc := gl.GetUniformLocation(r.shader_program, "projection")
-	view_loc := gl.GetUniformLocation(r.shader_program, "view")
-	model_loc := gl.GetUniformLocation(r.shader_program, "model")
-	color_loc := gl.GetUniformLocation(r.shader_program, "color")
-
-	fmt.printf(
-		"Font shader uniform locations: proj=%d, view=%d, model=%d, color=%d\n",
-		proj_loc,
-		view_loc,
-		model_loc,
-		color_loc,
-	)
-
-	if proj_loc == -1 || view_loc == -1 || model_loc == -1 || color_loc == -1 {
-		fmt.println("ERROR: Font shader uniforms not found!")
-		return
-	}
-
-	gl.UniformMatrix4fv(proj_loc, 1, false, &projection[0, 0])
-	gl.UniformMatrix4fv(view_loc, 1, false, &view[0, 0])
-	gl.UniformMatrix4fv(model_loc, 1, false, &model[0, 0])
-	gl.Uniform4fv(color_loc, 1, &color[0])
-
-	// Create simple test vertices that match your font Vertex struct
-	test_vertices := []Vertex {
-		{{-0.5, -0.5}, {0, 0}, 0}, // Bottom left
-		{{0.5, -0.5}, {1, 0}, 0}, // Bottom right
-		{{0.5, 0.5}, {1, 1}, 0}, // Top right
-		{{-0.5, 0.5}, {0, 1}, 0}, // Top left
-	}
-
-	test_indices := []u32{0, 1, 2, 2, 3, 0}
-
-	// Upload to your existing buffers
-	gl.BindBuffer(gl.ARRAY_BUFFER, r.vbo)
-	gl.BufferData(
-		gl.ARRAY_BUFFER,
-		len(test_vertices) * size_of(Vertex),
-		raw_data(test_vertices),
-		gl.STREAM_DRAW,
-	)
-
-	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.ebo)
-	gl.BufferData(
-		gl.ELEMENT_ARRAY_BUFFER,
-		len(test_indices) * size_of(u32),
-		raw_data(test_indices),
-		gl.STREAM_DRAW,
-	)
-
-	gl.BindVertexArray(r.vao)
-	gl.DrawElements(gl.TRIANGLES, i32(len(test_indices)), gl.UNSIGNED_INT, nil)
-	gl.BindVertexArray(0)
-
-	error := gl.GetError()
-	fmt.printf("Font shader test GL error: %d\n", error)
-}
-
-test_basic_triangle :: proc(r: ^OpenGL_Renderer) {
-	// Hardcoded triangle vertices in NDC space (-1 to 1)
-	vertices := [][2]f32 {
-		{-0.5, -0.5}, // Bottom left
-		{0.5, -0.5}, // Bottom right  
-		{0.0, 0.5}, // Top center
-	}
-
-	// Very simple shader that ignores all matrices
-	simple_vert := `#version 330 core
-layout (location = 0) in vec2 pos;
-void main() {
-    gl_Position = vec4(pos, 0.0, 1.0);  // Direct to NDC
-}`
-
-
-	simple_frag := `#version 330 core
-out vec4 color;
-void main() {
-    color = vec4(1.0, 0.0, 0.0, 1.0);  // Pure red
-}`
-
-
-	program, ok := compile_shader_program(simple_vert, simple_frag)
-	if !ok {
-		fmt.println("Failed to compile simple shader")
-		return
-	}
-	defer gl.DeleteProgram(program)
-
-	// Create temporary VAO just for this test
-	test_vao, test_vbo: u32
-	gl.GenVertexArrays(1, &test_vao)
-	gl.GenBuffers(1, &test_vbo)
-	defer {
-		gl.DeleteVertexArrays(1, &test_vao)
-		gl.DeleteBuffers(1, &test_vbo)
-	}
-
-	gl.BindVertexArray(test_vao)
-	gl.BindBuffer(gl.ARRAY_BUFFER, test_vbo)
-	gl.BufferData(
-		gl.ARRAY_BUFFER,
-		len(vertices) * size_of([2]f32),
-		raw_data(vertices),
-		gl.STATIC_DRAW,
-	)
-
-	gl.EnableVertexAttribArray(0)
-	gl.VertexAttribPointer(0, 2, gl.FLOAT, false, size_of([2]f32), 0)
-
-	gl.UseProgram(program)
-	gl.DrawArrays(gl.TRIANGLES, 0, 3)
-	gl.UseProgram(0)
-
-	gl.BindVertexArray(0)
-
-	error := gl.GetError()
-	if error != gl.NO_ERROR {
-		fmt.printf("OpenGL error in simple triangle: %d\n", error)
-	} else {
-		fmt.println("DEBUG: Simple triangle rendered without GL errors")
-	}
-}
-
-
-// Create simple background shader
 create_background_shader :: proc() -> u32 {
 	vertex_source := `#version 330 core
 const vec2 vertices[4] = vec2[4](
@@ -461,8 +327,8 @@ in vec2 position;
 out vec3 color;
 void main() {
 	float t = (position.y + 1.0) / 2.0;
-	vec3 bottom = vec3(75.0, 151.0, 201.0) / 255.0;
-	vec3 top = vec3(115.0, 193.0, 245.0) / 255.0;
+	vec3 bottom = vec3(56.0, 130.0, 210.0) / 255.0;
+	vec3 top = vec3(30.0, 80.0, 133.0) / 255.0;
 	color = mix(bottom, top, t);
 }`
 
@@ -491,29 +357,61 @@ draw_background :: proc(shader: u32) {
 }
 
 // Render help text overlay
-render_help_text :: proc(screen_width, screen_height: i32) {
-	// TODO: Render help text using a smaller font size
-	// For now, just demonstrate the concept
-	help_text := `Drag and drop a .ttf or .otf file to change the font
+render_help_text :: proc(font_id: shaper.Font_ID, screen_width, screen_height: i32) {
+	// Render help text overlay
+	// Calculate positioning
+	line_height := help_font_size * 1.2 // 20% spacing between lines
+	margin := f32(10)
+	start_y := f32(screen_height) - margin * 2
 
-Controls:
-right drag (or CTRL drag) - move
-left drag - trackball rotate  
-middle drag - turntable rotate
-scroll wheel - zoom
+	// Set up 2D projection for UI overlay
+	projection := glsl.mat4Ortho3d(0, f32(screen_width), 0, f32(screen_height), -1, 1)
+	view := glsl.mat4(1.0)
+	model := glsl.mat4(1.0)
 
-0, 1, 2, 3 - change anti-aliasing window size
-A - toggle 2D anti-aliasing
-S - reset anti-aliasing settings
-C - toggle control points visualization
-R - reset view
-H - toggle help`
+	// Semi-transparent color for help text
+	help_color := [4]f32{f32(199) / 255, f32(101) / 255, f32(15) / 255, 0.5}
 
+	// Render each line
+	for line, i in help_lines {
+		if len(line) == 0 {continue} 	// Skip empty lines but still advance Y position
 
-	// Would render with smaller font face here
-	// render_text_2d(&renderer, help_font_face, shaped_help, 
-	//     screen_width, screen_height, {10, screen_height - 10}, 
-	//     {0.8, 0.2, 0.8, 0.8}) // purple help text
+		// Shape the line
+		line_buffer, shape_ok := shaper.shape_string(engine, font_id, line)
+		defer shaper.release_buffer(engine, line_buffer)
+		if !shape_ok {continue}
+
+		// Prepare for GPU rendering
+		prep_ok := prepare_shaped_text(&renderer, help_face, line_buffer)
+		if !prep_ok {continue}
+
+		// Calculate Y position (from top down)
+		y_pos := start_y - f32(i) * line_height
+
+		// Render the line
+		// render_text(
+		// 	&renderer,
+		// 	help_face,
+		// 	line_buffer,
+		// 	projection,
+		// 	view,
+		// 	model,
+		// 	help_color,
+		// 	1.0,
+		// 	true,
+		// )
+
+		render_text_2d(
+			&renderer,
+			help_face,
+			line_buffer,
+			int(screen_width),
+			int(screen_height),
+			{margin, y_pos},
+			help_color,
+		)
+	}
+
 }
 
 size_callback :: proc "c" (window: glfw.WindowHandle, w, h: c.int) {
@@ -531,7 +429,7 @@ Transform :: struct {
 }
 
 get_projection_matrix :: proc "c" (transform: ^Transform, aspect: f32) -> glsl.mat4 {
-	return glsl.mat4Perspective(transform.fovy, aspect, 0.002, 12.0)
+	return glsl.mat4Perspective(transform.fovy, aspect, 0.0002, 100.0)
 }
 
 get_view_matrix :: proc "c" (transform: ^Transform) -> glsl.mat4 {
@@ -717,8 +615,8 @@ mouse_callback :: proc "c" (window: glfw.WindowHandle, x_pos, y_pos: f64) {
 			x := drag_controller.transform.position.x
 			y := drag_controller.transform.position.y
 			delta := target - drag_controller.drag_target
-			drag_controller.transform.position.x = math.clamp(x + delta.x, -4.0, 4.0)
-			drag_controller.transform.position.y = math.clamp(y + delta.y, -4.0, 4.0)
+			drag_controller.transform.position.x = x + delta.x //math.clamp(x + delta.x, -4.0, 4.0)
+			drag_controller.transform.position.y = y + delta.y //math.clamp(y + delta.y, -4.0, 4.0)
 		}
 	} else if drag_controller.active_action == .Rotate_Turntable {
 		size := math.min(width_f64, height_f64)
@@ -734,18 +632,29 @@ mouse_callback :: proc "c" (window: glfw.WindowHandle, x_pos, y_pos: f64) {
 }
 
 scroll_callback :: proc "c" (window: glfw.WindowHandle, x_offset, y_offset: f64) {
-	factor := math.clamp(1.0 - f32(y_offset) / 10.0, 0.1, 1.9)
-	drag_controller.transform.distance = math.clamp(
-		drag_controller.transform.distance * factor,
-		0.01,
-		10.0,
-	)
+	context = runtime.default_context()
+	zoom_scale :: 10
+	factor := math.clamp(1.0 - f32(y_offset) / zoom_scale, 0.1, 1.9)
+	drag_controller.transform.distance = drag_controller.transform.distance * factor
+	// math.clamp(
+	// 	drag_controller.transform.distance * factor,
+	// 	0.01,
+	// 	10.0,
+	// )
 }
 
 key_callback :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods: i32) {
 	if action != glfw.PRESS {return}
-
+	context = runtime.default_context()
 	switch key {
+	case glfw.KEY_Z:
+		context = runtime.default_context()
+		fmt.println(transform)
+		fmt.println(
+			"Projection Matrix:",
+			get_projection_matrix(&transform, f32(width) / f32(height)),
+		)
+		fmt.println("View Matrix:", get_view_matrix(&transform))
 	case glfw.KEY_R:
 		reset_transform(&drag_controller)
 
@@ -754,19 +663,23 @@ key_callback :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods
 
 	case glfw.KEY_A:
 		enable_supersampling_anti_aliasing = !enable_supersampling_anti_aliasing
-
+	case glfw.KEY_M:
+		multi_sampling = (multi_sampling + 1) % 2
+		mode_names := []string{"Analytical AA", "4x Multi-sample"}
+		fmt.printf("Multi-sampling: %s\n", mode_names[multi_sampling])
 	case glfw.KEY_0:
 		anti_aliasing_window_size = 0
 
 	case glfw.KEY_1:
 		anti_aliasing_window_size = 1
-
 	case glfw.KEY_2:
-		anti_aliasing_window_size = 20
-
+		anti_aliasing_window_size = 2
 	case glfw.KEY_3:
-		anti_aliasing_window_size = 40
-
+		anti_aliasing_window_size = 4
+	case glfw.KEY_4:
+		anti_aliasing_window_size = 8
+	case glfw.KEY_5:
+		anti_aliasing_window_size = 16
 	case glfw.KEY_S:
 		anti_aliasing_window_size = 1
 		enable_supersampling_anti_aliasing = true
@@ -879,3 +792,22 @@ debug_severity_string :: proc(severity: u32) -> string {
 		return "Unknown"
 	}
 }
+
+
+help_text := `Drag and drop a .ttf or .otf file to change the font
+Controls:
+right drag (or CTRL drag) - move
+left drag - trackball rotate  
+middle drag - turntable rotate
+scroll wheel - zoom
+
+0, 1, 2, 3, 5, 5 - Anti-aliasing window size (0,1,2,4,8,16)
+A - toggle 2D anti-aliasing
+S - reset anti-aliasing settings
+C - toggle control points visualization
+R - reset view
+H - toggle help
+Z - Print Transform State`
+
+
+help_lines: []string

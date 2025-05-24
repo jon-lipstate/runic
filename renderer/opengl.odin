@@ -43,11 +43,14 @@ OpenGL_Font_Face_Instance :: struct {
 	// CPU-side data for building GPU buffers
 	buffer_curves:  [dynamic]Buffer_Curve,
 	buffer_glyphs:  [dynamic]Buffer_Glyph, // maps into `buffer_curves`
+	glyph_bounds:   [dynamic]Glyph_Bound, // maps into `buffer_curves`
 	glyph_to_index: map[ttf.Glyph]int, // Maps into `buffer_glyphs`
 	// any change to cache above requires re-upload:
 	needs_upload:   bool,
 }
-
+Glyph_Bound :: struct {
+	left, bottom, width, height: f32,
+}
 // Single quadratic Bézier curve 
 Buffer_Curve :: struct {
 	start:   [2]f32, // First control point (on-curve)
@@ -312,7 +315,7 @@ destroy_opengl_renderer :: proc(r: ^OpenGL_Renderer) {
 destroy_font_face :: proc(instance: ^OpenGL_Font_Face_Instance) {
 	if instance == nil {return}
 
-	hinter.hinter_program_delete(instance.hinter)
+	hinter.program_delete(instance.hinter)
 
 	// Delete OpenGL resources
 	if instance.curves_buffer != 0 {
@@ -386,7 +389,7 @@ render_text_2d :: proc(
 
 	model := translation * rotation_mat * scale_mat
 
-	render_text(r, face, buf, projection, view, model, color)
+	render_text(r, face, buf, projection, view, model, color, 1)
 }
 
 // 3D convenience wrapper for billboards
@@ -456,35 +459,75 @@ add_glyph_to_gpu_cache :: proc(face: ^OpenGL_Font_Face_Instance, glyph_id: ttf.G
 		face.needs_upload = true
 		return true
 	}
+	glyph_bounds := outline.bounds
+	glyph_width := f32(glyph_bounds.max[0] - glyph_bounds.min[0])
+	glyph_height := f32(glyph_bounds.max[1] - glyph_bounds.min[1])
 
-	// Convert outline segments to GPU curves
+	// Add padding for anti-aliasing
+	padding := 0.1 * f32(face.face.font.units_per_em)
+	glyph_left := f32(glyph_bounds.min[0]) - padding
+	glyph_bottom := f32(glyph_bounds.min[1]) - padding
+	padded_width := glyph_width + 2.0 * padding
+	padded_height := glyph_height + 2.0 * padding
+
 	start_index := len(face.buffer_curves)
 	curve_count := 0
 
-	// Calculate the scale factor to normalize font units to 0-1 space
-	scale := 1.0 / f32(face.face.font.units_per_em)
-
+	// Convert curves to 0-1 space relative to this glyph's padded bounds
 	for contour in outline.contours {
 		for segment in contour.segments {
 			switch s in segment {
 			case ttf.Line_Segment:
-				// Convert line to quadratic bezier (control point at midpoint)
-				// This ensures the "curve" is actually straight
 				midpoint := [2]f32{(s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2}
 				curve := Buffer_Curve {
-					start   = s.a * scale,
-					control = midpoint * scale,
-					end     = s.b * scale,
+					start   = normalize_point_to_uv(
+						s.a,
+						glyph_left,
+						glyph_bottom,
+						padded_width,
+						padded_height,
+					),
+					control = normalize_point_to_uv(
+						midpoint,
+						glyph_left,
+						glyph_bottom,
+						padded_width,
+						padded_height,
+					),
+					end     = normalize_point_to_uv(
+						s.b,
+						glyph_left,
+						glyph_bottom,
+						padded_width,
+						padded_height,
+					),
 				}
 				append(&face.buffer_curves, curve)
 				curve_count += 1
 
 			case ttf.Quad_Bezier_Segment:
-				// Already quadratic bezier - perfect!
 				curve := Buffer_Curve {
-					start   = s.a * scale,
-					control = s.control * scale,
-					end     = s.b * scale,
+					start   = normalize_point_to_uv(
+						s.a,
+						glyph_left,
+						glyph_bottom,
+						padded_width,
+						padded_height,
+					),
+					control = normalize_point_to_uv(
+						s.control,
+						glyph_left,
+						glyph_bottom,
+						padded_width,
+						padded_height,
+					),
+					end     = normalize_point_to_uv(
+						s.b,
+						glyph_left,
+						glyph_bottom,
+						padded_width,
+						padded_height,
+					),
 				}
 				append(&face.buffer_curves, curve)
 				curve_count += 1
@@ -492,28 +535,80 @@ add_glyph_to_gpu_cache :: proc(face: ^OpenGL_Font_Face_Instance, glyph_id: ttf.G
 		}
 	}
 
-	// Create glyph entry pointing to our curves
+	// Store the glyph's world-space bounds for rendering
 	glyph_entry := Buffer_Glyph {
 		start = i32(start_index),
 		count = i32(curve_count),
 	}
 	glyph_index := len(face.buffer_glyphs)
 	append(&face.buffer_glyphs, glyph_entry)
-
-	// Map glyph ID to buffer index for fast lookup
 	face.glyph_to_index[glyph_id] = glyph_index
 	face.needs_upload = true
+
+	// // Convert outline segments to GPU curves
+	// start_index := len(face.buffer_curves)
+	// curve_count := 0
+
+	// // Calculate the scale factor to normalize font units to 0-1 space
+	// scale := 1.0 / f32(face.face.font.units_per_em)
+
+	// for contour in outline.contours {
+	// 	for segment in contour.segments {
+	// 		switch s in segment {
+	// 		case ttf.Line_Segment:
+	// 			// Convert line to quadratic bezier (control point at midpoint)
+	// 			// This ensures the "curve" is actually straight
+	// 			midpoint := [2]f32{(s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2}
+	// 			curve := Buffer_Curve {
+	// 				start   = s.a * scale,
+	// 				control = midpoint * scale,
+	// 				end     = s.b * scale,
+	// 			}
+	// 			append(&face.buffer_curves, curve)
+	// 			curve_count += 1
+
+	// 		case ttf.Quad_Bezier_Segment:
+	// 			// Already quadratic bezier - perfect!
+	// 			curve := Buffer_Curve {
+	// 				start   = s.a * scale,
+	// 				control = s.control * scale,
+	// 				end     = s.b * scale,
+	// 			}
+	// 			append(&face.buffer_curves, curve)
+	// 			curve_count += 1
+	// 		}
+	// 	}
+	// }
+
+	// // Create glyph entry pointing to our curves
+	// glyph_entry := Buffer_Glyph {
+	// 	start = i32(start_index),
+	// 	count = i32(curve_count),
+	// }
+	// glyph_index := len(face.buffer_glyphs)
+	// append(&face.buffer_glyphs, glyph_entry)
+
+	// // Map glyph ID to buffer index for fast lookup
+	// face.glyph_to_index[glyph_id] = glyph_index
+	// face.needs_upload = true
 
 	return true
 }
 
+normalize_point_to_uv :: proc(
+	point: [2]f32,
+	bounds_left, bounds_bottom, bounds_width, bounds_height: f32,
+) -> [2]f32 {
+	return {(point[0] - bounds_left) / bounds_width, (point[1] - bounds_bottom) / bounds_height}
+}
+
 // 2. GPU buffer upload
 upload_gpu_buffers :: proc(face: ^OpenGL_Font_Face_Instance) {
-	fmt.printf(
-		"DEBUG: Uploading %d curves, %d glyphs\n",
-		len(face.buffer_curves),
-		len(face.buffer_glyphs),
-	)
+	// fmt.printf(
+	// 	"DEBUG: Uploading %d curves, %d glyphs\n",
+	// 	len(face.buffer_curves),
+	// 	len(face.buffer_glyphs),
+	// )
 
 	if len(face.buffer_curves) == 0 {
 		fmt.println("DEBUG: No curves to upload!")
@@ -553,6 +648,8 @@ render_text :: proc(
 	color: [4]f32 = {1, 1, 1, 1},
 	anti_alias_filter_size: f32 = 1.0,
 	use_super_sampling := true,
+	multi_sampling: i32 = 0,
+	enable_control_points_visualization := false,
 ) {
 	if len(buf.glyphs) == 0 {
 		fmt.println("DEBUG: No glyphs in buffer!")
@@ -578,6 +675,15 @@ render_text :: proc(
 
 	supersample_loc := gl.GetUniformLocation(r.shader_program, "enableSuperSamplingAntiAliasing")
 	gl.Uniform1i(supersample_loc, use_super_sampling ? 1 : 0)
+
+	multisample_loc := gl.GetUniformLocation(r.shader_program, "multiSampleMode")
+	gl.Uniform1i(multisample_loc, multi_sampling)
+
+	control_points_loc := gl.GetUniformLocation(
+		r.shader_program,
+		"enableControlPointsVisualization",
+	)
+	gl.Uniform1i(control_points_loc, enable_control_points_visualization ? 1 : 0)
 
 	// Set uniforms
 	proj_loc := gl.GetUniformLocation(r.shader_program, "projection")
@@ -632,13 +738,15 @@ render_text :: proc(
 		y := pen.y + f32(position.y_offset) * face.scale_factor
 
 		// UV coordinates in em units
+		uv_span := metrics.bbox.max - metrics.bbox.min
+		uv_scale := f32(face.face.font.units_per_em)
 		uv_left := f32(metrics.bbox.min[0]) / f32(face.face.font.units_per_em)
 		uv_bottom := f32(metrics.bbox.min[1]) / f32(face.face.font.units_per_em)
 		uv_right := f32(metrics.bbox.max[0]) / f32(face.face.font.units_per_em)
 		uv_top := f32(metrics.bbox.max[1]) / f32(face.face.font.units_per_em)
 
 		// Add dilation for anti-aliasing
-		dilation := 0.1 / f32(face.face.font.units_per_em)
+		dilation := 0.1 / uv_scale
 		uv_left -= dilation
 		uv_bottom -= dilation
 		uv_right += dilation
