@@ -14,7 +14,7 @@ Hinting_Mode :: enum u8 {
     None   = 0,  // No hinting - use original outlines
     Light  = 1,  // Light hinting - preserve shape, minimal grid fitting
     Normal = 2,  // Normal hinting - balance between shape and grid fitting
-    Full   = 3,  // Full hinting - maximum grid fitting 
+    Full   = 3,  // Full hinting - maximum grid fitting (optional)
 }
 
 make_multi :: memory.make_multi
@@ -30,13 +30,13 @@ HINTER_DEBUG_LOG :: true
 HINTER_DEBUG_STACK :: false
 HINTER_TTF_SCALAR_VERSION :: 40
 
-Ttf_Hinter_Stage :: enum u8 {
+Stage :: enum u8 {
 	font,
 	cvt,
 	glyph,
 }
 
-Ttf_Hinter_Round_State :: enum {
+Round_State :: enum {
 	to_half_grid,
 	to_grid,
 	to_double_grid,
@@ -45,7 +45,7 @@ Ttf_Hinter_Round_State :: enum {
 	off,
 }
 
-Ttf_Hinter_Instruction :: enum u8 {
+Instruction :: enum u8 {
 	// 0x00
 	ins_svtca_0,
 	ins_svtca_1,
@@ -359,7 +359,7 @@ TTF_HINTER_INSTRUCTION_LEN := [256]i8 {
 	1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
 }
 
-Hinter_Program_Ttf_Graphics_State :: struct {
+Graphics_State :: struct {
 	rp0: u32,
 	rp1: u32,
 	rp2: u32,
@@ -370,7 +370,7 @@ Hinter_Program_Ttf_Graphics_State :: struct {
 
 	loop: i32,
 	min_distance: f32,
-	round_state: Ttf_Hinter_Round_State,
+	round_state: Round_State,
 
 	auto_flip: bool,
 
@@ -394,7 +394,7 @@ Hinter_Program_Ttf_Graphics_State :: struct {
 	is_subpixel_rendering: bool,
 }
 
-HINTER_PROGRAM_TTF_GRAPHICS_STATE_DEFAULT :: Hinter_Program_Ttf_Graphics_State {
+GRAPHICS_STATE_DEFAULT :: Graphics_State {
 	rp0 = 0,
 	rp1 = 0,
 	rp2 = 0,
@@ -433,17 +433,17 @@ TTF_HINTER_TOUCH_X :: u8(1)
 TTF_HINTER_TOUCH_Y :: u8(2)
 TTF_HINTER_TOUCH_XY :: u8(3)
 
-Hinter_Program_Ttf_Instructions :: struct {
+Program_Instructions :: struct {
 	data: []byte,
 	offset: int,
 }
 
-Hinter_Program_Ttf_Stack :: struct {
+Program_Stack :: struct {
 	data: []i32,
 	count: int,
 }
 
-Hinter_Font_Wide_Data :: struct {
+Font_Wide_Data :: struct {
 	stack_size: i32,
 	storage_size: i32,
 	zone_0_size: i32,
@@ -453,8 +453,8 @@ Hinter_Font_Wide_Data :: struct {
 
 Hinter_Program :: struct {
 	font: ^ttf.Font,
-	zone0: Hinter_Program_Ttf_Zone,
-	zone1: Hinter_Program_Ttf_Zone,
+	zone0: Program_Zone,
+	zone1: Program_Zone,
 	ppem: u32,
 	point_size: f32,
 	funits_to_pixels_scale: f32,
@@ -468,7 +468,7 @@ Hinter_Program :: struct {
 	allocator: runtime.Allocator,
 }
 
-Hinter_Program_Ttf_Zone :: struct {
+Program_Zone :: struct {
 	cur: [][2]f32,
 	orig: [][2]f32,
 	orig_scaled: [][2]f32,
@@ -476,21 +476,21 @@ Hinter_Program_Ttf_Zone :: struct {
 	end_points: []u32,
 }
 
-Hinter_Program_Execution_Context :: struct {
+Execution_Context :: struct {
 	program: ^Hinter_Program,
-	stack: Hinter_Program_Ttf_Stack,
+	stack: Program_Stack,
 	is_compound_glyph: bool,
-	instructions: Hinter_Program_Ttf_Instructions,
-	gs: Hinter_Program_Ttf_Graphics_State,
-	zp0: ^Hinter_Program_Ttf_Zone,
-	zp1: ^Hinter_Program_Ttf_Zone,
-	zp2: ^Hinter_Program_Ttf_Zone,
-	proc_project: proc(ctx: ^Hinter_Program_Execution_Context, d: [2]i32) -> i32,
-	proc_dual_project: proc(ctx: ^Hinter_Program_Execution_Context, d: [2]i32) -> i32,
+	instructions: Program_Instructions,
+	gs: Graphics_State,
+	zp0: ^Program_Zone,
+	zp1: ^Program_Zone,
+	zp2: ^Program_Zone,
+	proc_project: proc(ctx: ^Execution_Context, d: [2]i32) -> i32,
+	proc_dual_project: proc(ctx: ^Execution_Context, d: [2]i32) -> i32,
 	instruction_count: i64,
 	storage: []i32,
-	ins: Ttf_Hinter_Instruction,
-	stage: Ttf_Hinter_Stage,
+	ins: Instruction,
+	stage: Stage,
 	iup_state: u8,
 	debug: bool,
 	started: bool,
@@ -498,7 +498,7 @@ Hinter_Program_Execution_Context :: struct {
 }
 
 @(cold)
-hinter_program_error :: proc(ctx: ^Hinter_Program_Execution_Context, msg: string) {
+program_error :: proc(ctx: ^Execution_Context, msg: string) {
 	if ! ctx.error {
 		ctx.error = true
 		log.errorf("[Ttf Hinter] An error occured during hinting: %v", msg)
@@ -506,71 +506,71 @@ hinter_program_error :: proc(ctx: ^Hinter_Program_Execution_Context, msg: string
 }
 
 @(disabled=! HINTER_DEBUG_ENABLED || ! HINTER_DEBUG_INSTRUCTIONS)
-hinter_program_ttf_debug_instruction :: proc(ctx: ^Hinter_Program_Execution_Context, ins: Ttf_Hinter_Instruction) {
+debug_instruction :: proc(ctx: ^Execution_Context, ins: Instruction) {
 	if ctx.debug {
 		log.debugf("%v) %v", ctx.instruction_count, ins)
 	}
 }
 
 @(disabled=! HINTER_DEBUG_ENABLED || ! HINTER_DEBUG_LOG)
-hinter_program_ttf_debug_log :: proc(ctx: ^Hinter_Program_Execution_Context, fmt: string, args: ..any) {
+debug_log :: proc(ctx: ^Execution_Context, fmt: string, args: ..any) {
 	if ctx.debug {
 		log.debugf(fmt, ..args)
 	}
 }
 
 @(disabled=! HINTER_DEBUG_ENABLED || ! HINTER_DEBUG_STACK)
-hinter_program_ttf_debug_stack_push :: proc(ctx: ^Hinter_Program_Execution_Context, val: i32) {
+debug_stack_push :: proc(ctx: ^Execution_Context, val: i32) {
 	if ctx.debug {
 		log.debugf("	stack push: %v [%v]", val, ctx.stack.count)
 	}
 }
 
 @(disabled=! HINTER_DEBUG_ENABLED || ! HINTER_DEBUG_STACK)
-hinter_program_ttf_debug_stack_pop :: proc(ctx: ^Hinter_Program_Execution_Context, val: i32) {
+debug_stack_pop :: proc(ctx: ^Execution_Context, val: i32) {
 	if ctx.debug {
 		log.debugf("	stack pop: %v [%v]", val, ctx.stack.count)
 	}
 }
 
-hinter_program_ttf_instructions_has_next :: proc(ctx: ^Hinter_Program_Execution_Context) -> bool {
+instructions_has_next :: proc(ctx: ^Execution_Context) -> bool {
 	return ctx.instructions.offset < len(ctx.instructions.data)
 }
 
-hinter_program_ttf_instructions_jump :: proc(ctx: ^Hinter_Program_Execution_Context, offset: i32) {
+instructions_jump :: proc(ctx: ^Execution_Context, offset: i32) {
 	new_offset := ctx.instructions.offset + int(offset)
 	if new_offset < 0 || new_offset >= len(ctx.instructions.data) {
-		hinter_program_error(ctx, "Jump OOB")
+		program_error(ctx, "Jump OOB")
 		return
 	}
 	ctx.instructions.offset = new_offset
 }
 
-hinter_program_ttf_add_cvt :: proc(ctx: ^Hinter_Program_Execution_Context, idx: u32, val: f32) #no_bounds_check {
+add_cvt :: proc(ctx: ^Execution_Context, idx: u32, val: f32) #no_bounds_check {
 	if i64(idx) >= i64(len(ctx.program.cvt)) {
-		hinter_program_error(ctx, "cvt OOB write")
+		program_error(ctx, "cvt OOB write")
 	}
 	if ctx.error {
 		return
 	}
 	ctx.program.cvt[idx] += val
-	hinter_program_ttf_debug_log(ctx, "    cvt: %v [%v]", ctx.program.cvt[idx], val)
+	debug_log(ctx, "    cvt: %v [%v]", ctx.program.cvt[idx], val)
 }
 
-hinter_program_ttf_set_cvt :: proc(ctx: ^Hinter_Program_Execution_Context, idx: u32, val: f32) #no_bounds_check{
+set_cvt :: proc(ctx: ^Execution_Context, idx: u32, val: f32) #no_bounds_check{
 	if i64(idx) >= i64(len(ctx.program.cvt)) {
-		hinter_program_error(ctx, "cvt OOB write")
+		program_error(ctx, "cvt OOB write")
 	}
 	if ctx.error {
 		return
 	}
 	ctx.program.cvt[idx] = val
-	hinter_program_ttf_debug_log(ctx, "    cvt: %v [%v]", val, idx)
+	debug_log(ctx, "    cvt: %v [%v]", val, idx)
 }
 
-hinter_program_ttf_get_cvt :: proc(ctx: ^Hinter_Program_Execution_Context, idx: u32) -> f32 #no_bounds_check {
+get_cvt :: proc(ctx: ^Execution_Context, idx: u32) -> f32 #no_bounds_check {
 	if i64(idx) >= i64(len(ctx.program.cvt)) {
-		hinter_program_error(ctx, "cvt OOB read")
+		program_error(ctx, "cvt OOB read")
 	}
 	if ctx.error {
 		return 0
@@ -578,9 +578,9 @@ hinter_program_ttf_get_cvt :: proc(ctx: ^Hinter_Program_Execution_Context, idx: 
 	return ctx.program.cvt[idx]
 }
 
-hinter_program_ttf_get_storage :: proc(ctx: ^Hinter_Program_Execution_Context, idx: u32) -> i32 #no_bounds_check {
+get_storage :: proc(ctx: ^Execution_Context, idx: u32) -> i32 #no_bounds_check {
 	if i64(idx) >= i64(len(ctx.storage)) {
-		hinter_program_error(ctx, "storage OOB read")
+		program_error(ctx, "storage OOB read")
 	}
 	if ctx.error {
 		return 0
@@ -588,60 +588,60 @@ hinter_program_ttf_get_storage :: proc(ctx: ^Hinter_Program_Execution_Context, i
 	return ctx.program.storage[idx]
 }
 
-hinter_program_ttf_set_storage :: proc(ctx: ^Hinter_Program_Execution_Context, idx: u32, val: i32) #no_bounds_check {
+set_storage :: proc(ctx: ^Execution_Context, idx: u32, val: i32) #no_bounds_check {
 	if i64(idx) >= i64(len(ctx.storage)) {
-		hinter_program_error(ctx, "storage OOB write")
+		program_error(ctx, "storage OOB write")
 	}
 	if ctx.error {
 		return
 	}
 	ctx.program.storage[idx] = val
-	hinter_program_ttf_debug_log(ctx, "    storage: %v [%v]", val, idx)
+	debug_log(ctx, "    storage: %v [%v]", val, idx)
 }
 
-hinter_program_ttf_zp_bounds_check :: proc(ctx: ^Hinter_Program_Execution_Context, points: []$T, idx: u32) {
+zp_bounds_check :: proc(ctx: ^Execution_Context, points: []$T, idx: u32) {
 	if i64(idx) >= i64(len(points)) {
-		hinter_program_error(ctx, "zp OOB read")
+		program_error(ctx, "zp OOB read")
 	}
 }
 
-hinter_program_ttf_get_zp :: proc(ctx: ^Hinter_Program_Execution_Context, points: []$T, idx: u32) -> T #no_bounds_check {
-	hinter_program_ttf_zp_bounds_check(ctx, points, idx)
+zp_get :: proc(ctx: ^Execution_Context, points: []$T, idx: u32) -> T #no_bounds_check {
+	zp_bounds_check(ctx, points, idx)
 	if ctx.error {
 		return {}
 	}
 	return points[idx]
 }
 
-hinter_program_ttf_set_zp :: proc(ctx: ^Hinter_Program_Execution_Context, points: []$T, idx: u32, res: T) #no_bounds_check {
-	hinter_program_ttf_zp_bounds_check(ctx, points, idx)
+zp_set :: proc(ctx: ^Execution_Context, points: []$T, idx: u32, res: T) #no_bounds_check {
+	zp_bounds_check(ctx, points, idx)
 	if ! ctx.error {
 		points[idx] = res
 	}
 }
 
-hinter_program_ttf_add_zp :: proc(ctx: ^Hinter_Program_Execution_Context, points: []$T, idx: u32, res: T) #no_bounds_check {
-	hinter_program_ttf_zp_bounds_check(ctx, points, idx)
+zp_add :: proc(ctx: ^Execution_Context, points: []$T, idx: u32, res: T) #no_bounds_check {
+	zp_bounds_check(ctx, points, idx)
 	if ! ctx.error {
 		points[idx] += res
 	}
 }
 
-hinter_program_ttf_or_zp :: proc(ctx: ^Hinter_Program_Execution_Context, points: []$T, idx: u32, res: T) #no_bounds_check {
-	hinter_program_ttf_zp_bounds_check(ctx, points, idx)
+zp_or :: proc(ctx: ^Execution_Context, points: []$T, idx: u32, res: T) #no_bounds_check {
+	zp_bounds_check(ctx, points, idx)
 	if ! ctx.error {
 		points[idx] |= res
 	}
 }
 
-hinter_program_ttf_and_zp :: proc(ctx: ^Hinter_Program_Execution_Context, points: []$T, idx: u32, res: T) #no_bounds_check {
-	hinter_program_ttf_zp_bounds_check(ctx, points, idx)
+zp_and :: proc(ctx: ^Execution_Context, points: []$T, idx: u32, res: T) #no_bounds_check {
+	zp_bounds_check(ctx, points, idx)
 	if ! ctx.error {
 		points[idx] |= res
 	}
 }
 
-hinter_program_interpolate :: proc(ctx: ^Hinter_Program_Execution_Context, axis: int, start_point_idx: u32, end_point_idx: u32, touch_0: u32, touch_1: u32) {
+interpolate :: proc(ctx: ^Execution_Context, axis: int, start_point_idx: u32, end_point_idx: u32, touch_0: u32, touch_1: u32) {
 	max_points := u32(len(ctx.program.zone1.cur))
 	if touch_0 >= max_points || touch_1 >= max_points || end_point_idx >= max_points {
 		return
@@ -658,15 +658,15 @@ hinter_program_interpolate :: proc(ctx: ^Hinter_Program_Execution_Context, axis:
 		old := ctx.program.zone1.cur[i][axis]
 		touch_0_c := ctx.program.zone1.cur[touch_0][axis]
 		ctx.program.zone1.cur[i][axis] = ctx.program.zone1.cur[touch_0][axis] + (scale * orig_dist)
-		hinter_program_ttf_debug_log(ctx, "    ---- interp: index = %v axis = %v touch_0: %v touch_1: %v", i, axis, touch_0, touch_1)
-		hinter_program_ttf_debug_log(ctx, "    moved to: %v ", ctx.program.zone1.cur[i][axis])
-		hinter_program_ttf_debug_log(ctx, "    moved from: %v ", old)
-		hinter_program_ttf_debug_log(ctx, "    delta was: %v ", scale * orig_dist)
-		hinter_program_ttf_debug_log(ctx, "    touch 0 was: %v [%v]", touch_0_c, touch_0)
+		debug_log(ctx, "    ---- interp: index = %v axis = %v touch_0: %v touch_1: %v", i, axis, touch_0, touch_1)
+		debug_log(ctx, "    moved to: %v ", ctx.program.zone1.cur[i][axis])
+		debug_log(ctx, "    moved from: %v ", old)
+		debug_log(ctx, "    delta was: %v ", scale * orig_dist)
+		debug_log(ctx, "    touch 0 was: %v [%v]", touch_0_c, touch_0)
 	}
 }
 
-hinter_program_shift :: proc(ctx: ^Hinter_Program_Execution_Context, axis: int, start_point_idx: u32, end_point_idx: u32, touch_0: u32) {
+shift :: proc(ctx: ^Execution_Context, axis: int, start_point_idx: u32, end_point_idx: u32, touch_0: u32) {
 	max_points := u32(len(ctx.program.zone1.cur))
 	if touch_0 >= max_points || end_point_idx >= max_points {
 		return
@@ -684,8 +684,8 @@ hinter_program_shift :: proc(ctx: ^Hinter_Program_Execution_Context, axis: int, 
 }
 
 
-hinter_program_interpolate_or_shift :: proc(ctx: ^Hinter_Program_Execution_Context, axis: int, start_point_idx: u32, end_point_idx: u32, touch_0: u32, touch_1: u32) {
-	iup_interpolate :: proc(ctx: ^Hinter_Program_Execution_Context, axis: int, i: u32, touch_0: u32, touch_1: u32) {
+interpolate_or_shift :: proc(ctx: ^Execution_Context, axis: int, start_point_idx: u32, end_point_idx: u32, touch_0: u32, touch_1: u32) {
+	iup_interpolate :: proc(ctx: ^Execution_Context, axis: int, i: u32, touch_0: u32, touch_1: u32) {
 		total_dist_cur := ctx.program.zone1.cur[touch_1][axis] - ctx.program.zone1.cur[touch_0][axis]
 		total_dist_org := (ctx.program.zone1.orig[touch_1][axis] - ctx.program.zone1.orig[touch_0][axis])
 		orig_dist	   := ctx.program.zone1.orig[i][axis] - ctx.program.zone1.orig[touch_0][axis]
@@ -694,21 +694,21 @@ hinter_program_interpolate_or_shift :: proc(ctx: ^Hinter_Program_Execution_Conte
 			scale = total_dist_cur / total_dist_org
 		}
 		ctx.program.zone1.cur[i][axis] = ctx.program.zone1.cur[touch_0][axis] + (scale * orig_dist)
-		hinter_program_ttf_debug_log(ctx, "    ---- interp: index = %v axis = %v touch_0: %v touch_1: %v", i, axis, touch_0, touch_1)
+		debug_log(ctx, "    ---- interp: index = %v axis = %v touch_0: %v touch_1: %v", i, axis, touch_0, touch_1)
 		/*
 		*/
 	}
 
-	iup_shift :: proc(ctx: ^Hinter_Program_Execution_Context, axis: int, i: u32, touch_0: u32, touch_1: u32) {
+	iup_shift :: proc(ctx: ^Execution_Context, axis: int, i: u32, touch_0: u32, touch_1: u32) {
 		diff_0 := abs(ctx.program.zone1.orig[touch_0][axis] - ctx.program.zone1.orig[i][axis])
 		diff_1 := abs(ctx.program.zone1.orig[touch_1][axis] - ctx.program.zone1.orig[i][axis])
 		touch := diff_0 < diff_1 ? touch_0 : touch_1
 		diff := ctx.program.zone1.cur[touch][axis] - ctx.program.zone1.orig_scaled[touch][axis]
 		ctx.program.zone1.cur[i][axis] += diff
-		hinter_program_ttf_debug_log(ctx, "    ---- shift: %v %v %v", i, axis, ctx.program.zone1.cur[i][axis])
+		debug_log(ctx, "    ---- shift: %v %v %v", i, axis, ctx.program.zone1.cur[i][axis])
 	}
 
-	iup_interpolate_or_shift :: proc(ctx: ^Hinter_Program_Execution_Context, axis: int, coord_0, coord_1: f32, i: u32, touch_0: u32, touch_1: u32) {
+	iup_interpolate_or_shift :: proc(ctx: ^Execution_Context, axis: int, coord_0, coord_1: f32, i: u32, touch_0: u32, touch_1: u32) {
 		if (coord_0 <= ctx.program.zone1.orig[i][axis] && ctx.program.zone1.orig[i][axis] <= coord_1) {
 			iup_interpolate(ctx, axis, i, touch_0, touch_1)
 		} else {
@@ -741,9 +741,9 @@ hinter_program_interpolate_or_shift :: proc(ctx: ^Hinter_Program_Execution_Conte
 	}
 }
 
-hinter_program_ttf_stack_pop :: proc(ctx: ^Hinter_Program_Execution_Context, $N: int) -> [N]i32 {
+stack_pop :: proc(ctx: ^Execution_Context, $N: int) -> [N]i32 {
 	if ctx.stack.count < N {
-		hinter_program_error(ctx, "Stack underflow")
+		program_error(ctx, "Stack underflow")
 	}
 	if ctx.error {
 		return {}
@@ -752,40 +752,40 @@ hinter_program_ttf_stack_pop :: proc(ctx: ^Hinter_Program_Execution_Context, $N:
 	for i in 0..<N {
 		ctx.stack.count -= 1
 		result[i] = ctx.stack.data[ctx.stack.count]
-		hinter_program_ttf_debug_stack_pop(ctx, result[i])
+		debug_stack_pop(ctx, result[i])
 	}
 	return result
 }
 
-hinter_program_ttf_stack_push :: proc(ctx: ^Hinter_Program_Execution_Context, values: [$N]i32) {
+stack_push :: proc(ctx: ^Execution_Context, values: [$N]i32) {
 	if ctx.stack.count + N > len(ctx.stack.data) {
-		hinter_program_error(ctx, "Stack overflow")
+		program_error(ctx, "Stack overflow")
 	}
 	if ctx.error {
 		return
 	}
 	for i in 0..<N {
 		ctx.stack.data[ctx.stack.count] = values[i]
-		hinter_program_ttf_debug_stack_push(ctx, values[i])
+		debug_stack_push(ctx, values[i])
 		ctx.stack.count += 1
 	}
 }
 
-hinter_program_ttf_instructions_next :: proc(ctx: ^Hinter_Program_Execution_Context) -> Ttf_Hinter_Instruction {
-	if ! hinter_program_ttf_instructions_has_next(ctx) {
-		hinter_program_error(ctx, "Instruction OOB read")
+instructions_next :: proc(ctx: ^Execution_Context) -> Instruction {
+	if ! instructions_has_next(ctx) {
+		program_error(ctx, "Instruction OOB read")
 	}
 	if ctx.error {
-		return Ttf_Hinter_Instruction(0x28)
+		return Instruction(0x28)
 	}
 	value := ctx.instructions.data[ctx.instructions.offset]
 	ctx.instructions.offset += 1
-	return Ttf_Hinter_Instruction(value)
+	return Instruction(value)
 }
 
-hinter_program_ttf_instructions_ptr_next :: proc(ctx: ^Hinter_Program_Execution_Context) -> ^byte {
-	if ! hinter_program_ttf_instructions_has_next(ctx) {
-		hinter_program_error(ctx, "Instruction OOB read")
+instructions_ptr_next :: proc(ctx: ^Execution_Context) -> ^byte {
+	if ! instructions_has_next(ctx) {
+		program_error(ctx, "Instruction OOB read")
 	}
 	if ctx.error {
 		return nil
@@ -795,11 +795,9 @@ hinter_program_ttf_instructions_ptr_next :: proc(ctx: ^Hinter_Program_Execution_
 	return value
 }
 
-hinter_program_ttf_normalize :: proc(v: [2]i32, r: [2]i32) -> [2]i32 {
+normalize :: proc(v: [2]i32, r: [2]i32) -> [2]i32 {
 	v := v
-	if v == {} {
-		return r
-	}
+	if v == {} { return r }
 
 	norm := [2]f32 { f32(v.x) / 64, f32(v.y) / 64 }
 	norm = linalg.vector_normalize(norm) * 64
@@ -807,16 +805,16 @@ hinter_program_ttf_normalize :: proc(v: [2]i32, r: [2]i32) -> [2]i32 {
 	return [2]i32 { i32(norm.x) / 4, i32(norm.y) / 4 }
 }
 
-hinter_program_ttf_execute :: proc(ctx: ^Hinter_Program_Execution_Context) -> bool {
+execute :: proc(ctx: ^Execution_Context) -> bool {
 	if ! ctx.started {
 		ctx.started = true
-		hinter_program_ttf_debug_log(ctx, "--- executing %v hinter program ---", ctx.stage)
+		debug_log(ctx, "--- executing %v hinter program ---", ctx.stage)
 	}
 
-	for ! ctx.error && hinter_program_ttf_instructions_has_next(ctx) {
-		ins := hinter_program_ttf_instructions_next(ctx)
+	for ! ctx.error && instructions_has_next(ctx) {
+		ins := instructions_next(ctx)
 		assert(! ctx.error) // should not fail
-		hinter_program_ttf_debug_instruction(ctx, ins)
+		debug_instruction(ctx, ins)
 		ctx.instruction_count += 1
 
 		ctx.iup_state = 0
@@ -829,368 +827,368 @@ hinter_program_ttf_execute :: proc(ctx: ^Hinter_Program_Execution_Context) -> bo
 		case .ins_spvtca_1: fallthrough
 		case .ins_sfvtca_0: fallthrough
 		case .ins_sfvtca_1:
-			hinter_program_ttf_ins_sxytca(ctx)
+			ins_sxytca(ctx)
 
 		case .ins_spvtl_0: fallthrough
 		case .ins_spvtl_1:
-			hinter_program_ttf_ins_spvtl(ctx)
+			ins_spvtl(ctx)
 
 		case .ins_sfvtl_0: fallthrough
 		case .ins_sfvtl_1:
-			hinter_program_ttf_ins_sfvtl(ctx)
+			ins_sfvtl(ctx)
 
 		case .ins_spvfs:
-			hinter_program_ttf_ins_spvfs(ctx)
+			ins_spvfs(ctx)
 
 		case .ins_sfvfs:
-			hinter_program_ttf_ins_sfvfs(ctx)
+			ins_sfvfs(ctx)
 
 		case .ins_gpv:
-			hinter_program_ttf_ins_gpv(ctx)
+			ins_gpv(ctx)
 
 		case .ins_gfv:
-			hinter_program_ttf_ins_gfv(ctx)
+			ins_gfv(ctx)
 
 		case .ins_sfvtpv:
-			hinter_program_ttf_ins_sfvtpv(ctx)
+			ins_sfvtpv(ctx)
 
 		case .ins_isect:
-			hinter_program_ttf_ins_isect(ctx)
+			ins_isect(ctx)
 
 		case .ins_srp0:
-			hinter_program_ttf_ins_srp0(ctx)
+			ins_srp0(ctx)
 
 		case .ins_srp1:
-			hinter_program_ttf_ins_srp1(ctx)
+			ins_srp1(ctx)
 
 		case .ins_srp2:
-			hinter_program_ttf_ins_srp2(ctx)
+			ins_srp2(ctx)
 
 		case .ins_szp0:
-			hinter_program_ttf_ins_szp0(ctx)
+			ins_szp0(ctx)
 
 		case .ins_szp1:
-			hinter_program_ttf_ins_szp1(ctx)
+			ins_szp1(ctx)
 
 		case .ins_szp2:
-			hinter_program_ttf_ins_szp2(ctx)
+			ins_szp2(ctx)
 
 		case .ins_szps:
-			hinter_program_ttf_ins_szps(ctx)
+			ins_szps(ctx)
 
 		case .ins_sloop:
-			hinter_program_ttf_ins_sloop(ctx)
+			ins_sloop(ctx)
 
 		case .ins_rtg:
-			hinter_program_ttf_ins_rtg(ctx)
+			ins_rtg(ctx)
 
 		case .ins_rthg:
-			hinter_program_ttf_ins_rthg(ctx)
+			ins_rthg(ctx)
 
 		case .ins_smd:
-			hinter_program_ttf_ins_smd(ctx)
+			ins_smd(ctx)
 
 		case .ins_else:
-			hinter_program_ttf_ins_else(ctx)
+			ins_else(ctx)
 
 		case .ins_jmpr:
-			hinter_program_ttf_ins_jmpr(ctx)
+			ins_jmpr(ctx)
 
 		case .ins_scvtci:
-			hinter_program_ttf_ins_scvtci(ctx)
+			ins_scvtci(ctx)
 
 		case .ins_sswci:
-			hinter_program_ttf_ins_sswci(ctx)
+			ins_sswci(ctx)
 
 		case .ins_ssw:
-			hinter_program_ttf_ins_ssw(ctx)
+			ins_ssw(ctx)
 
 		case .ins_dup:
-			hinter_program_ttf_ins_dup(ctx)
+			ins_dup(ctx)
 
 		case .ins_pop:
-			hinter_program_ttf_ins_pop(ctx)
+			ins_pop(ctx)
 
 		case .ins_clear:
-			hinter_program_ttf_ins_clear(ctx)
+			ins_clear(ctx)
 
 		case .ins_swap:
-			hinter_program_ttf_ins_swap(ctx)
+			ins_swap(ctx)
 
 		case .ins_depth:
-			hinter_program_ttf_ins_depth(ctx)
+			ins_depth(ctx)
 
 		case .ins_cindex:
-			hinter_program_ttf_ins_cindex(ctx)
+			ins_cindex(ctx)
 
 		case .ins_mindex:
-			hinter_program_ttf_ins_mindex(ctx)
+			ins_mindex(ctx)
 
 		case .ins_alignpts:
-			hinter_program_ttf_ins_alignpts(ctx)
+			ins_alignpts(ctx)
 
 		case .ins_utp:
-			hinter_program_ttf_ins_utp(ctx)
+			ins_utp(ctx)
 
 		case .ins_loopcall:
-			hinter_program_ttf_ins_loopcall(ctx)
+			ins_loopcall(ctx)
 
 		case .ins_call:
-			hinter_program_ttf_ins_call(ctx)
+			ins_call(ctx)
 
 		case .ins_fdef:
-			hinter_program_ttf_ins_fdef(ctx)
+			ins_fdef(ctx)
 
 		case .ins_endf:
-			hinter_program_ttf_ins_endf(ctx)
+			ins_endf(ctx)
 
 		case .ins_mdap_0: fallthrough
 		case .ins_mdap_1:
-			hinter_program_ttf_ins_mdap(ctx)
+			ins_mdap(ctx)
 
 		case .ins_iup_0: fallthrough
 		case .ins_iup_1:
-			hinter_program_ttf_ins_iup(ctx)
+			ins_iup(ctx)
 
 		case .ins_shp_0: fallthrough
 		case .ins_shp_1:
-			hinter_program_ttf_ins_shp(ctx)
+			ins_shp(ctx)
 
 		case .ins_shc_0: fallthrough
 		case .ins_shc_1:
-			hinter_program_ttf_ins_shc(ctx)
+			ins_shc(ctx)
 
 		case .ins_shz_0: fallthrough
 		case .ins_shz_1:
-			hinter_program_ttf_ins_shz(ctx)
+			ins_shz(ctx)
 
 		case .ins_shpix:
-			hinter_program_ttf_ins_shpix(ctx)
+			ins_shpix(ctx)
 
 		case .ins_ip:
-			hinter_program_ttf_ins_ip(ctx)
+			ins_ip(ctx)
 
 		case .ins_msirp_0: fallthrough
 		case .ins_msirp_1:
-			hinter_program_ttf_ins_msirp(ctx)
+			ins_msirp(ctx)
 
 		case .ins_alignrp:
-			hinter_program_ttf_ins_alignrp(ctx)
+			ins_alignrp(ctx)
 
 		case .ins_rtdg:
-			hinter_program_ttf_ins_rtdg(ctx)
+			ins_rtdg(ctx)
 
 		case .ins_miap_0: fallthrough
 		case .ins_miap_1:
-			hinter_program_ttf_ins_miap(ctx)
+			ins_miap(ctx)
 
 		case .ins_npushb:
-			hinter_program_ttf_ins_npushb(ctx)
+			ins_npushb(ctx)
 
 		case .ins_npushw:
-			hinter_program_ttf_ins_npushw(ctx)
+			ins_npushw(ctx)
 
 		case .ins_ws:
-			hinter_program_ttf_ins_ws(ctx)
+			ins_ws(ctx)
 
 		case .ins_rs:
-			hinter_program_ttf_ins_rs(ctx)
+			ins_rs(ctx)
 
 		case .ins_wcvtp:
-			hinter_program_ttf_ins_wcvtp(ctx)
+			ins_wcvtp(ctx)
 
 		case .ins_rcvt:
-			hinter_program_ttf_ins_rcvt(ctx)
+			ins_rcvt(ctx)
 
 		case .ins_gc_0: fallthrough
 		case .ins_gc_1:
-			hinter_program_ttf_ins_gc(ctx)
+			ins_gc(ctx)
 
 		case .ins_scfs:
-			hinter_program_ttf_ins_scfs(ctx)
+			ins_scfs(ctx)
 
 		case .ins_md_0: fallthrough
 		case .ins_md_1:
-			hinter_program_ttf_ins_md(ctx)
+			ins_md(ctx)
 
 		case .ins_mppem:
-			hinter_program_ttf_ins_mppem(ctx)
+			ins_mppem(ctx)
 
 		case .ins_mps:
-			hinter_program_ttf_ins_mps(ctx)
+			ins_mps(ctx)
 
 		case .ins_flipon:
-			hinter_program_ttf_ins_flipon(ctx)
+			ins_flipon(ctx)
 
 		case .ins_flipoff:
-			hinter_program_ttf_ins_flipoff(ctx)
+			ins_flipoff(ctx)
 
 		case .ins_debug:
-			hinter_program_ttf_ins_debug(ctx)
+			ins_debug(ctx)
 
 		case .ins_lt:
-			hinter_program_ttf_ins_lt(ctx)
+			ins_lt(ctx)
 
 		case .ins_lteq:
-			hinter_program_ttf_ins_lteq(ctx)
+			ins_lteq(ctx)
 
 		case .ins_gt:
-			hinter_program_ttf_ins_gt(ctx)
+			ins_gt(ctx)
 
 		case .ins_gteq:
-			hinter_program_ttf_ins_gteq(ctx)
+			ins_gteq(ctx)
 
 		case .ins_eq:
-			hinter_program_ttf_ins_eq(ctx)
+			ins_eq(ctx)
 
 		case .ins_neq:
-			hinter_program_ttf_ins_neq(ctx)
+			ins_neq(ctx)
 
 		case .ins_odd:
-			hinter_program_ttf_ins_odd(ctx)
+			ins_odd(ctx)
 
 		case .ins_even:
-			hinter_program_ttf_ins_even(ctx)
+			ins_even(ctx)
 
 		case .ins_if:
-			hinter_program_ttf_ins_if(ctx)
+			ins_if(ctx)
 
 		case .ins_eif:
-			hinter_program_ttf_ins_eif(ctx)
+			ins_eif(ctx)
 
 		case .ins_and:
-			hinter_program_ttf_ins_and(ctx)
+			ins_and(ctx)
 
 		case .ins_or:
-			hinter_program_ttf_ins_or(ctx)
+			ins_or(ctx)
 
 		case .ins_not:
-			hinter_program_ttf_ins_not(ctx)
+			ins_not(ctx)
 
 		case .ins_sdb:
-			hinter_program_ttf_ins_sdb(ctx)
+			ins_sdb(ctx)
 
 		case .ins_sds:
-			hinter_program_ttf_ins_sds(ctx)
+			ins_sds(ctx)
 
 		case .ins_add:
-			hinter_program_ttf_ins_add(ctx)
+			ins_add(ctx)
 
 		case .ins_sub:
-			hinter_program_ttf_ins_sub(ctx)
+			ins_sub(ctx)
 
 		case .ins_div:
-			hinter_program_ttf_ins_div(ctx)
+			ins_div(ctx)
 
 		case .ins_mul:
-			hinter_program_ttf_ins_mul(ctx)
+			ins_mul(ctx)
 
 		case .ins_abs:
-			hinter_program_ttf_ins_abs(ctx)
+			ins_abs(ctx)
 
 		case .ins_neg:
-			hinter_program_ttf_ins_neg(ctx)
+			ins_neg(ctx)
 
 		case .ins_floor:
-			hinter_program_ttf_ins_floor(ctx)
+			ins_floor(ctx)
 
 		case .ins_ceiling:
-			hinter_program_ttf_ins_ceiling(ctx)
+			ins_ceiling(ctx)
 
 		case .ins_round_0: fallthrough
 		case .ins_round_1: fallthrough
 		case .ins_round_2: fallthrough
 		case .ins_round_3:
-			hinter_program_ttf_ins_round(ctx)
+			ins_round(ctx)
 
 		case .ins_nround_0: fallthrough
 		case .ins_nround_1: fallthrough
 		case .ins_nround_2: fallthrough
 		case .ins_nround_3:
-			hinter_program_ttf_ins_nround(ctx)
+			ins_nround(ctx)
 
 		case .ins_wcvtf:
-			hinter_program_ttf_ins_wcvtf(ctx)
+			ins_wcvtf(ctx)
 
 		case .ins_deltap1: fallthrough
 		case .ins_deltap2: fallthrough
 		case .ins_deltap3:
-			hinter_program_ttf_ins_deltap(ctx)
+			ins_deltap(ctx)
 
 		case .ins_deltac1: fallthrough
 		case .ins_deltac2: fallthrough
 		case .ins_deltac3:
-			hinter_program_ttf_ins_deltac(ctx)
+			ins_deltac(ctx)
 
 		case .ins_sround:
-			hinter_program_ttf_ins_sround(ctx)
+			ins_sround(ctx)
 
 		case .ins_s45round:
-			hinter_program_ttf_ins_s45round(ctx)
+			ins_s45round(ctx)
 
 		case .ins_jrot:
-			hinter_program_ttf_ins_jrot(ctx)
+			ins_jrot(ctx)
 
 		case .ins_jrof:
-			hinter_program_ttf_ins_jrof(ctx)
+			ins_jrof(ctx)
 
 		case .ins_roff:
-			hinter_program_ttf_ins_roff(ctx)
+			ins_roff(ctx)
 
 		case .ins_rutg:
-			hinter_program_ttf_ins_rutg(ctx)
+			ins_rutg(ctx)
 
 		case .ins_rdtg:
-			hinter_program_ttf_ins_rdtg(ctx)
+			ins_rdtg(ctx)
 
 		case .ins_sangw:
-			hinter_program_ttf_ins_sangw(ctx)
+			ins_sangw(ctx)
 
 		case .ins_aa:
-			hinter_program_ttf_ins_aa(ctx)
+			ins_aa(ctx)
 
 		case .ins_flippt:
-			hinter_program_ttf_ins_flippt(ctx)
+			ins_flippt(ctx)
 
 		case .ins_fliprgon:
-			hinter_program_ttf_ins_fliprgon(ctx)
+			ins_fliprgon(ctx)
 
 		case .ins_fliprgoff:
-			hinter_program_ttf_ins_fliprgoff(ctx)
+			ins_fliprgoff(ctx)
 
 		case .ins_scanctrl:
-			hinter_program_ttf_ins_scanctrl(ctx)
+			ins_scanctrl(ctx)
 
 		case .ins_sdpvtl_0: fallthrough
 		case .ins_sdpvtl_1:
-			hinter_program_ttf_ins_sdpvtl(ctx)
+			ins_sdpvtl(ctx)
 
 		case .ins_getinfo:
-			hinter_program_ttf_ins_getinfo(ctx)
+			ins_getinfo(ctx)
 
 		case .ins_idef:
-			hinter_program_ttf_ins_idef(ctx)
+			ins_idef(ctx)
 
 		case .ins_roll:
-			hinter_program_ttf_ins_roll(ctx)
+			ins_roll(ctx)
 
 		case .ins_max:
-			hinter_program_ttf_ins_max(ctx)
+			ins_max(ctx)
 
 		case .ins_min:
-			hinter_program_ttf_ins_min(ctx)
+			ins_min(ctx)
 
 		case .ins_scantype:
-			hinter_program_ttf_ins_scantype(ctx)
+			ins_scantype(ctx)
 
 		case .ins_instctrl:
-			hinter_program_ttf_ins_instctrl(ctx)
+			ins_instctrl(ctx)
 
 		case .ins_getvar:
-			hinter_program_ttf_ins_getvar(ctx)
+			ins_getvar(ctx)
 
 		case .ins_getdata:
-			hinter_program_ttf_ins_getdata(ctx)
+			ins_getdata(ctx)
 
 		case .ins_pushb_0: fallthrough
 		case .ins_pushb_1: fallthrough
@@ -1200,7 +1198,7 @@ hinter_program_ttf_execute :: proc(ctx: ^Hinter_Program_Execution_Context) -> bo
 		case .ins_pushb_5: fallthrough
 		case .ins_pushb_6: fallthrough
 		case .ins_pushb_7:
-			hinter_program_ttf_ins_pushb(ctx)
+			ins_pushb(ctx)
 
 		case .ins_pushw_0: fallthrough
 		case .ins_pushw_1: fallthrough
@@ -1210,7 +1208,7 @@ hinter_program_ttf_execute :: proc(ctx: ^Hinter_Program_Execution_Context) -> bo
 		case .ins_pushw_5: fallthrough
 		case .ins_pushw_6: fallthrough
 		case .ins_pushw_7:
-			hinter_program_ttf_ins_pushw(ctx)
+			ins_pushw(ctx)
 
 		case .ins_mdrp_00: fallthrough
 		case .ins_mdrp_01: fallthrough
@@ -1244,7 +1242,7 @@ hinter_program_ttf_execute :: proc(ctx: ^Hinter_Program_Execution_Context) -> bo
 		case .ins_mdrp_29: fallthrough
 		case .ins_mdrp_30: fallthrough
 		case .ins_mdrp_31:
-			hinter_program_ttf_ins_mdrp(ctx)
+			ins_mdrp(ctx)
 
 		case .ins_mirp_00: fallthrough
 		case .ins_mirp_01: fallthrough
@@ -1278,55 +1276,35 @@ hinter_program_ttf_execute :: proc(ctx: ^Hinter_Program_Execution_Context) -> bo
 		case .ins_mirp_29: fallthrough
 		case .ins_mirp_30: fallthrough
 		case .ins_mirp_31:
-			hinter_program_ttf_ins_mirp(ctx)
+			ins_mirp(ctx)
 
 		case:
-			hinter_program_error(ctx, "Illegal instruction")
+			program_error(ctx, "Illegal instruction")
 		}
 	}
 
 	return ! ctx.error
 }
 
-hinter_program_f2dot14_to_f32 :: #force_inline proc(f2_dot_14: i16) -> f32 {
+f2dot14_to_f32 :: #force_inline proc(f2_dot_14: i16) -> f32 {
 	return f32(f2_dot_14) / 16_384
 }
 
-hinter_program_f32_to_f2dot14 :: #force_inline proc(v: f32) -> i16 {
+f32_to_f2dot14 :: #force_inline proc(v: f32) -> i16 {
 	return i16(v * 16_384)
 }
 
-hinter_program_f26dot6_to_f32 :: #force_inline proc(f26dot6: i32) -> f32 {
+f26dot6_to_f32 :: #force_inline proc(f26dot6: i32) -> f32 {
 	return f32(f26dot6) / 64
 }
 
-hinter_program_f32_to_f26dot6 :: #force_inline proc(v: f32) -> i32 {
+f32_to_f26dot6 :: #force_inline proc(v: f32) -> i32 {
 	return i32(math.round(v * 64))
 }
 
-hinter_program_ttf_ins_sxytca :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ins_as_i16 := i16(ctx.ins)
-	aa, bb: i16
-	aa = (ins_as_i16 & 1) << 14
-	bb = aa ~ 0x4000
 
-	aa_f32 := hinter_program_f2dot14_to_f32(aa)
-	bb_f32 := hinter_program_f2dot14_to_f32(bb)
 
-	if ins_as_i16 < 4 {
-		ctx.gs.proj_vector.x = aa_f32
-		ctx.gs.proj_vector.y = bb_f32
-
-		ctx.gs.dual_vector.x = aa_f32
-		ctx.gs.dual_vector.y = bb_f32
-	}
-	if (ins_as_i16 & 2) == 0 {
-		ctx.gs.free_vector.x = aa_f32
-		ctx.gs.free_vector.y = bb_f32
-	}
-}
-
-hinter_program_ttf_norm_f32 :: #force_inline proc(v: [2]f32) -> [2]f32 {
+norm_f32 :: #force_inline proc(v: [2]f32) -> [2]f32 {
 	n := linalg.normalize0(v)
 	if n == {} {
 		n = { 1, 0 }
@@ -1342,15 +1320,15 @@ hinter_program_ttf_norm_f32 :: #force_inline proc(v: [2]f32) -> [2]f32 {
 	return n
 }
 
-hinter_program_ttf_project :: proc(ctx: ^Hinter_Program_Execution_Context, d: [2]f32) -> f32 {
+project :: proc(ctx: ^Execution_Context, d: [2]f32) -> f32 {
 	return linalg.dot(ctx.gs.proj_vector, d)
 }
 
-hinter_program_ttf_dual_project :: proc(ctx: ^Hinter_Program_Execution_Context, d: [2]f32) -> f32 {
+dual_project :: proc(ctx: ^Execution_Context, d: [2]f32) -> f32 {
 	return linalg.dot(ctx.gs.dual_vector, d)
 }
 
-hinter_program_ttf_round_according_to_state :: proc(ctx: ^Hinter_Program_Execution_Context, v: f32) -> f32 {
+round_according_to_state :: proc(ctx: ^Execution_Context, v: f32) -> f32 {
 	new_v := abs(v)
 	switch ctx.gs.round_state {
 	case .to_half_grid: new_v = math.floor(new_v) + 0.5
@@ -1363,13 +1341,13 @@ hinter_program_ttf_round_according_to_state :: proc(ctx: ^Hinter_Program_Executi
 	return v < 0 ? -new_v : new_v
 }
 
-hinter_program_ttf_move_point_orig :: proc(ctx: ^Hinter_Program_Execution_Context, zone: ^Hinter_Program_Ttf_Zone, idx: u32, dist: f32) {
-	hinter_program_ttf_zp_bounds_check(ctx, zone.orig, idx)
+move_point_orig :: proc(ctx: ^Execution_Context, zone: ^Program_Zone, idx: u32, dist: f32) {
+	zp_bounds_check(ctx, zone.orig, idx)
 	if ctx.error {
 		return
 	}
 
-	move := ctx.gs.free_vector * dist / hinter_program_f_dot_p(ctx)
+	move := ctx.gs.free_vector * dist / f_dot_p(ctx)
 
 	if ctx.gs.free_vector.x == 0 {
 		move.x = 0
@@ -1377,14 +1355,14 @@ hinter_program_ttf_move_point_orig :: proc(ctx: ^Hinter_Program_Execution_Contex
 	if ctx.gs.free_vector.y == 0 {
 		move.y = 0
 	}
-	hinter_program_ttf_add_zp(ctx, zone.cur, idx, move)
+	zp_add(ctx, zone.cur, idx, move)
 }
 
-hinter_program_ttf_move_point :: proc(ctx: ^Hinter_Program_Execution_Context, zone: ^Hinter_Program_Ttf_Zone, idx: u32, dist: f32, touch: bool) {
-	move := ctx.gs.free_vector * dist / hinter_program_f_dot_p(ctx)
+move_point :: proc(ctx: ^Execution_Context, zone: ^Program_Zone, idx: u32, dist: f32, touch: bool) {
+	move := ctx.gs.free_vector * dist / f_dot_p(ctx)
 	if ctx.gs.free_vector.x != 0 {
 		if touch {
-			hinter_program_ttf_or_zp(ctx, zone.touch, idx, TTF_HINTER_TOUCH_X)
+			zp_or(ctx, zone.touch, idx, TTF_HINTER_TOUCH_X)
 		}
 		// In accordance with the FreeType's v40 interpreter (with backward 
 		// compatability enabled), movement along the x-axis is disabled 
@@ -1392,317 +1370,48 @@ hinter_program_ttf_move_point :: proc(ctx: ^Hinter_Program_Execution_Context, zo
 	}
 	if ctx.gs.free_vector.y != 0 {
 		if touch {
-			hinter_program_ttf_or_zp(ctx, zone.touch, idx, TTF_HINTER_TOUCH_Y)
+			zp_or(ctx, zone.touch, idx, TTF_HINTER_TOUCH_Y)
 		}
 		if ctx.iup_state == TTF_HINTER_TOUCH_XY {
 			move.y = 0
 		}
 	}
 
-	hinter_program_ttf_add_zp(ctx, zone.cur, idx, move)
-	hinter_program_ttf_debug_log(ctx, "    moved: %v [%v], %v", hinter_program_ttf_get_zp(ctx, zone.cur, idx), idx, dist)
+	zp_add(ctx, zone.cur, idx, move)
+	debug_log(ctx, "    moved: %v [%v], %v", zp_get(ctx, zone.cur, idx), idx, dist)
 }
 
-hinter_program_ttf_ins_sxvtl :: proc(ctx: ^Hinter_Program_Execution_Context, idx_1: u32, idx_2: u32) -> [2]f32 {
-	ins := u8(ctx.ins)
 
-	p1 := hinter_program_ttf_get_zp(ctx, ctx.zp1.cur, idx_1)
-	p2 := hinter_program_ttf_get_zp(ctx, ctx.zp2.cur, idx_2)
-
-	delta := p1 - p2
-
-	norm := hinter_program_ttf_norm_f32(delta)
-	if ins & 1 != 0 {
-		norm = { -norm.y, norm.x }
-	}
-
-	return norm
-}
-
-hinter_program_ttf_ins_spvtl :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	v := hinter_program_ttf_ins_sxvtl(ctx, u32(values[0]), u32(values[1]))
-	ctx.gs.proj_vector = v
-	ctx.gs.dual_vector = v
-}
-
-hinter_program_ttf_ins_sfvtl :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	v := hinter_program_ttf_ins_sxvtl(ctx, u32(values[0]), u32(values[1]))
-	ctx.gs.free_vector = v
-}
-
-hinter_program_ttf_ins_spvfs :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	y := hinter_program_f2dot14_to_f32(i16(values[0]))
-	x := hinter_program_f2dot14_to_f32(i16(values[1]))
-
-	norm := hinter_program_ttf_norm_f32({ x, y })
-
-	ctx.gs.proj_vector = norm
-	ctx.gs.dual_vector = norm
-}
-
-hinter_program_ttf_ins_sfvfs :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	y := hinter_program_f2dot14_to_f32(i16(values[0]))
-	x := hinter_program_f2dot14_to_f32(i16(values[1]))
-
-	norm := hinter_program_ttf_norm_f32({ x, y })
-
-	ctx.gs.free_vector = norm
-
-}
-
-hinter_program_ttf_ins_gpv :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := [2]i32 {
-		i32(hinter_program_f32_to_f2dot14(ctx.gs.proj_vector.x)),
-		i32(hinter_program_f32_to_f2dot14(ctx.gs.proj_vector.y)),
-	}
-	hinter_program_ttf_stack_push(ctx, values)
-}
-
-hinter_program_ttf_ins_gfv :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := [2]i32 {
-		i32(hinter_program_f32_to_f2dot14(ctx.gs.free_vector.x)),
-		i32(hinter_program_f32_to_f2dot14(ctx.gs.free_vector.y)),
-	}
-	hinter_program_ttf_stack_push(ctx, values)
-}
-
-hinter_program_ttf_ins_sfvtpv :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ctx.gs.free_vector = ctx.gs.proj_vector
-}
-
-hinter_program_ttf_ins_isect :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 5)
-
-	b1_i := u32(values[0])
-	b0_i := u32(values[1])
-	a1_i := u32(values[2])
-	a0_i := u32(values[3])
-	point := u32(values[4])
-
-	a0 := hinter_program_ttf_get_zp(ctx, ctx.zp1.cur, a0_i)
-	a1 := hinter_program_ttf_get_zp(ctx, ctx.zp1.cur, a1_i)
-	b0 := hinter_program_ttf_get_zp(ctx, ctx.zp0.cur, b0_i)
-	b1 := hinter_program_ttf_get_zp(ctx, ctx.zp0.cur, b1_i)
-
-	denom := (a0.x - a1.x) * (b0.y - b1.y) - (a0.y - a1.y) * (b0.x - b1.x)
-	if abs(denom) > HINTER_EPS {
-		a_cross := linalg.cross(a0, a1)
-		b_cross := linalg.cross(b0, b1)
-
-		val := (a_cross * (b0 - b1) - b_cross * (a0 - a1)) / denom
-		hinter_program_ttf_set_zp(ctx, ctx.zp2.cur, point, val)
-	} else {
-		hinter_program_ttf_set_zp(ctx, ctx.zp2.cur, point, (a0 + a1 + b0 + b1) / 4)
-	}
-
-	hinter_program_ttf_or_zp(ctx, ctx.zp2.touch, point, TTF_HINTER_TOUCH_XY)
-}
-
-hinter_program_ttf_ins_srp0 :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 1)
-	ctx.gs.rp0 = u32(values[0])
-	hinter_program_ttf_debug_log(ctx, "    rp0 = %v", ctx.gs.rp0)
-}
-
-hinter_program_ttf_ins_srp1 :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	ctx.gs.rp1 = u32(value)
-	hinter_program_ttf_debug_log(ctx, "    rp1 = %v", ctx.gs.rp1)
-}
-
-hinter_program_ttf_ins_srp2 :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	ctx.gs.rp2 = u32(value)
-	hinter_program_ttf_debug_log(ctx, "    rp2 = %v", ctx.gs.rp2)
-}
-
-hinter_program_ttf_set_zone :: proc(ctx: ^Hinter_Program_Execution_Context, zp: ^^Hinter_Program_Ttf_Zone, value: u32) {
+set_zone :: proc(ctx: ^Execution_Context, zp: ^^Program_Zone, value: u32) {
 	switch value {
 	case 0: zp^ = &ctx.program.zone0
 	case 1: zp^ = &ctx.program.zone1
-	case: hinter_program_error(ctx, "Illegal zone value")
+	case: program_error(ctx, "Illegal zone value")
 	}
 }
 
-hinter_program_ttf_ins_szp0 :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	hinter_program_ttf_set_zone(ctx, &ctx.zp0, value)
-	ctx.gs.gep0 = u16(value)
-}
-
-hinter_program_ttf_ins_szp1 :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	hinter_program_ttf_set_zone(ctx, &ctx.zp1, value)
-	ctx.gs.gep1 = u16(value)
-}
-
-hinter_program_ttf_ins_szp2 :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	hinter_program_ttf_set_zone(ctx, &ctx.zp2, value)
-	ctx.gs.gep2 = u16(value)
-}
-
-hinter_program_ttf_ins_szps :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	hinter_program_ttf_set_zone(ctx, &ctx.zp0, value)
-	hinter_program_ttf_set_zone(ctx, &ctx.zp1, value)
-	hinter_program_ttf_set_zone(ctx, &ctx.zp2, value)
-	ctx.gs.gep0 = u16(value)
-	ctx.gs.gep1 = u16(value)
-	ctx.gs.gep2 = u16(value)
-}
-
-hinter_program_ttf_ins_sloop :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	ctx.gs.loop = min(value, 0xFFFF)
-}
-
-hinter_program_ttf_ins_rtg :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ctx.gs.round_state = .to_grid
-}
-
-hinter_program_ttf_ins_rthg :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ctx.gs.round_state = .to_half_grid
-}
-
-hinter_program_ttf_ins_smd :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	ctx.gs.min_distance = hinter_program_f26dot6_to_f32(value)
-}
-
-hinter_program_ttf_skip_code :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	next := hinter_program_ttf_instructions_next(ctx)
+skip_code :: proc(ctx: ^Execution_Context) {
+	next := instructions_next(ctx)
 	real_len := int(TTF_HINTER_INSTRUCTION_LEN[u8(next)])
 	if real_len < 0 {
-		real_len = abs(real_len) * int(hinter_program_ttf_instructions_next(ctx))
+		real_len = abs(real_len) * int(instructions_next(ctx))
 	} else {
 		real_len -= 1
 	}
 	ctx.instructions.offset += real_len
 	if ctx.instructions.offset >= len(ctx.instructions.data) {
-		hinter_program_error(ctx, "oob instruction")
+		program_error(ctx, "oob instruction")
 	}
 	if ctx.error {
 		return
 	}
-	ctx.ins = Ttf_Hinter_Instruction(ctx.instructions.data[ctx.instructions.offset])
+	ctx.ins = Instruction(ctx.instructions.data[ctx.instructions.offset])
 }
 
-hinter_program_ttf_ins_else :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	n_ifs := 1
-	for n_ifs != 0 {
-		hinter_program_ttf_skip_code(ctx)
-		if ctx.error {
-			return
-		}
-		#partial switch ctx.ins {
-		case .ins_if: n_ifs += 1
-		case .ins_eif: n_ifs -= 1
-		}
-	}
-	// NOTE(lucas): eat last eif
-	hinter_program_ttf_instructions_next(ctx)
-}
-
-hinter_program_ttf_ins_jmpr :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	hinter_program_ttf_instructions_jump(ctx, value)
-}
-
-hinter_program_ttf_ins_scvtci :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	ctx.gs.control_value_cutin = hinter_program_f26dot6_to_f32(value)
-}
-
-hinter_program_ttf_ins_sswci :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	ctx.gs.single_width_cutin = hinter_program_f26dot6_to_f32(value)
-}
-
-hinter_program_ttf_ins_ssw :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	ctx.gs.single_width_cutin = hinter_program_f26dot6_to_f32(value) * ctx.program.funits_to_pixels_scale
-}
-
-hinter_program_ttf_ins_dup :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	hinter_program_ttf_stack_push(ctx, [2]i32 { value, value })
-}
-
-hinter_program_ttf_ins_pop :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	hinter_program_ttf_stack_pop(ctx, 1)
-}
-
-hinter_program_ttf_ins_clear :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ctx.stack.count = 0
-}
-
-hinter_program_ttf_ins_swap :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	hinter_program_ttf_stack_push(ctx, hinter_program_ttf_stack_pop(ctx, 2))
-}
-
-hinter_program_ttf_ins_depth :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	hinter_program_ttf_stack_push(ctx, [1]i32 { i32(ctx.stack.count) })
-}
-
-hinter_program_ttf_ins_cindex :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	offset := ctx.stack.count - int(value)
-	if offset < 0 || offset >= ctx.stack.count {
-		hinter_program_error(ctx, "Stack read OOB")
-		return
-	}
-	hinter_program_ttf_stack_push(ctx, [1]i32 { ctx.stack.data[offset] })
-}
-
-hinter_program_ttf_ins_mindex :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	offset := ctx.stack.count - int(value)
-	if offset < 0 || offset >= ctx.stack.count {
-		hinter_program_error(ctx, "Stack read OOB")
-		return
-	}
-	move := ctx.stack.data[offset]
-	copy(ctx.stack.data[offset:], ctx.stack.data[offset+1:])
-	ctx.stack.data[ctx.stack.count - 1] = move
-}
-
-hinter_program_ttf_ins_alignpts :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	points := hinter_program_ttf_stack_pop(ctx, 2)
-
-	p1 := u32(points[1])
-	p2 := u32(points[0])
-
-	v1 := hinter_program_ttf_get_zp(ctx, ctx.zp1.cur, p1)
-	v2 := hinter_program_ttf_get_zp(ctx, ctx.zp2.cur, p2)
-
-	distance := hinter_program_ttf_project(ctx, v2 - v1) / 2
-
-	// func_move
-	hinter_program_ttf_move_point(ctx, ctx.zp1, p1, distance, true)
-	hinter_program_ttf_move_point(ctx, ctx.zp0, p2, -distance, true)
-}
-
-hinter_program_ttf_ins_utp :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	point := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	mask := u8(0xFF)
-	if ctx.gs.free_vector.x != 0 {
-		mask &= ~TTF_HINTER_TOUCH_X
-	}
-	if ctx.gs.free_vector.y != 0{
-		mask &= ~TTF_HINTER_TOUCH_Y
-	}
-	hinter_program_ttf_and_zp(ctx, ctx.zp0.touch, point, mask)
-}
-
-hinter_program_ttf_call_func :: proc(ctx: ^Hinter_Program_Execution_Context, func_id: u32, count: i32) {
+call_func :: proc(ctx: ^Execution_Context, func_id: u32, count: i32) {
 	stashed_instructions := ctx.instructions
 	if func_id < 0 || i64(func_id) >= i64(len(ctx.program.shared_intructions)) {
-		hinter_program_error(ctx, "execute invalid instruction stream")
+		program_error(ctx, "execute invalid instruction stream")
 	}
 	if ctx.error {
 		return
@@ -1713,153 +1422,12 @@ hinter_program_ttf_call_func :: proc(ctx: ^Hinter_Program_Execution_Context, fun
 			break
 		}
 		ctx.instructions.offset = 0
-		hinter_program_ttf_execute(ctx)
+		execute(ctx)
 	}
 	ctx.instructions = stashed_instructions
 }
 
-hinter_program_ttf_ins_loopcall :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	func_id := u32(values[0])
-	count := values[1]
-	hinter_program_ttf_call_func(ctx, func_id, count)
-}
-
-hinter_program_ttf_ins_call :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	func_id := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	hinter_program_ttf_call_func(ctx, func_id, 1)
-}
-
-hinter_program_ttf_ins_fdef :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	func_id := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	if func_id < 0 || i64(func_id) >= i64(len(ctx.program.shared_intructions)) {
-		hinter_program_error(ctx, "execute invalid instruction stream")
-	}
-	ins_start := hinter_program_ttf_instructions_ptr_next(ctx)
-	len := 1
-	for hinter_program_ttf_instructions_next(ctx) != .ins_endf && ! ctx.error {
-		len += 1
-	}
-	if ctx.error {
-		return
-	}
-	ctx.program.shared_intructions[func_id] = mem.slice_ptr(ins_start, len)
-}
-
-hinter_program_ttf_ins_endf :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	// NOTE(lucas): no op
-}
-
-hinter_program_ttf_ins_mdap :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ins := u8(ctx.ins)
-
-	point := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	distance: f32
-	if ins & 0x1 != 0 {
-		v := hinter_program_ttf_get_zp(ctx, ctx.zp0.cur, point)
-		d := hinter_program_ttf_project(ctx, v)
-		distance = hinter_program_ttf_round_according_to_state(ctx, d) - d
-	} else {
-		distance = 0
-	}
-	hinter_program_ttf_move_point(ctx, ctx.zp0, point, distance, true)
-
-	ctx.gs.rp0 = point
-	ctx.gs.rp1 = point
-	hinter_program_ttf_debug_log(ctx, "    rp0 = %v", ctx.gs.rp0)
-	hinter_program_ttf_debug_log(ctx, "    rp1 = %v", ctx.gs.rp1)
-}
-
-hinter_program_ttf_ins_iup :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ins := u8(ctx.ins)
-	if ctx.zp2 == &ctx.program.zone0 {
-		hinter_program_error(ctx, "Invalid IUP zone")
-		return
-	}
-
-	// In accordance with the FreeType's v40 interpreter (with backward 
-	// compatability enabled), points cannot be moved on either axis post-IUP.
-	// Post-IUP occurs after IUP has been executed using both the x and y axes.
-
-	if (ctx.iup_state == TTF_HINTER_TOUCH_XY) {
-		return
-	}
-
-	touch_flag := ins & 1 != 0 ? TTF_HINTER_TOUCH_X : TTF_HINTER_TOUCH_Y
-	ctx.iup_state |= touch_flag
-	axis := touch_flag == TTF_HINTER_TOUCH_X ? 0 : 1
-
-	/*
-	point_idx := u32(0)
-	for end_point_idx in ctx.program.zone1.end_points {
-		start_point_idx := point_idx
-		for point_idx <= end_point_idx && hinter_program_ttf_get_zp(ctx, ctx.program.zone1.touch, point_idx) & touch_flag == 0 {
-			point_idx += 1
-		}
-
-		if point_idx <= end_point_idx {
-			first_touched_idx := point_idx
-			current_touched_idx := point_idx
-
-			point_idx += 1
-
-			for point_idx <= end_point_idx {
-				if hinter_program_ttf_get_zp(ctx, ctx.program.zone1.touch, point_idx) & touch_flag != 0 {
-					hinter_program_interpolate(ctx, axis, current_touched_idx + 1, point_idx - 1, current_touched_idx, point_idx)
-					current_touched_idx = point_idx
-				}
-				point_idx += 1
-			}
-
-			if current_touched_idx == first_touched_idx {
-				hinter_program_shift(ctx, axis, start_point_idx, end_point_idx, current_touched_idx)
-			} else {
-				hinter_program_interpolate(ctx, axis, current_touched_idx + 1, end_point_idx, current_touched_idx, first_touched_idx)
-				if first_touched_idx > 0 {
-					hinter_program_interpolate(ctx, axis, start_point_idx, first_touched_idx - 1, current_touched_idx, first_touched_idx)
-				}
-			}
-		}
-	}
-	*/
-
-	point_idx := u32(0)
-	for end_point_idx in ctx.program.zone1.end_points {
-		start_point_idx := point_idx
-		touch_0: u32
-		finding_touch_1: bool
-		for point_idx <= end_point_idx {
-
-			if ctx.program.zone1.touch[point_idx] & touch_flag != 0 {
-				if finding_touch_1 {
-					hinter_program_interpolate_or_shift(ctx, axis, start_point_idx, end_point_idx, touch_0, point_idx)
-
-					finding_touch_1 = point_idx != end_point_idx || ctx.program.zone1.touch[start_point_idx] & touch_flag == 0
-					if finding_touch_1 {
-						touch_0 = point_idx
-					}
-				} else {
-					touch_0 = point_idx
-					finding_touch_1 = true
-				}
-			}
-
-			point_idx += 1
-		}
-
-		if finding_touch_1 {
-			// The index of the second touched point wraps back to the beginning.
-			for i in start_point_idx..=touch_0 {
-				if ctx.program.zone1.touch[i] & touch_flag != 0 {
-					hinter_program_interpolate_or_shift(ctx, axis, start_point_idx, end_point_idx, touch_0, i)
-					break
-				}
-			}
-		}
-	}
-}
-
-hinter_program_f_dot_p :: proc(ctx: ^Hinter_Program_Execution_Context) -> f32 {
+f_dot_p :: proc(ctx: ^Execution_Context) -> f32 {
 	v := linalg.dot(ctx.gs.free_vector, ctx.gs.proj_vector)
 	if abs(v) < F_DOT_P_MIN {
 		v = 1
@@ -1867,10 +1435,10 @@ hinter_program_f_dot_p :: proc(ctx: ^Hinter_Program_Execution_Context) -> f32 {
 	return v
 }
 
-hinter_program_compute_point_displacement :: proc(ctx: ^Hinter_Program_Execution_Context) -> (f32, ^Hinter_Program_Ttf_Zone, u32) {
+compute_point_displacement :: proc(ctx: ^Execution_Context) -> (f32, ^Program_Zone, u32) {
 	ins := u8(ctx.ins)
 	ref_p: u32
-	ref_zone: ^Hinter_Program_Ttf_Zone
+	ref_zone: ^Program_Zone
 	if ins & 0x1 != 0 {
 		ref_p = ctx.gs.rp1
 		ref_zone = ctx.zp0
@@ -1879,518 +1447,22 @@ hinter_program_compute_point_displacement :: proc(ctx: ^Hinter_Program_Execution
 		ref_zone = ctx.zp1
 	}
 
-	cur := hinter_program_ttf_get_zp(ctx, ref_zone.cur, ref_p)
-	orig := hinter_program_ttf_get_zp(ctx, ref_zone.orig_scaled, ref_p)
+	cur := zp_get(ctx, ref_zone.cur, ref_p)
+	orig := zp_get(ctx, ref_zone.orig_scaled, ref_p)
 	if ctx.error {
 		return 0, nil, 0
 	}
 
-	d := hinter_program_ttf_project(ctx, cur - orig)
+	d := project(ctx, cur - orig)
 
 	return d, ref_zone, ref_p
 }
 
-hinter_program_ttf_ins_shp :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	d, _, _ := hinter_program_compute_point_displacement(ctx)
-	if ctx.error {
-		return
-	}
-
-	for _ in 0..<ctx.gs.loop {
-		point := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-		hinter_program_ttf_move_point(ctx, ctx.zp2, point, d, true)
-	}
-	ctx.gs.loop = 1
-}
-
-hinter_program_ttf_ins_shc :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	contour := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	d, ref_zone, ref_p := hinter_program_compute_point_displacement(ctx)
-	if ctx.error {
-		return
-	}
-	if ref_zone != ctx.zp2 {
-		ref_p = 0xFFFFFFFF
-	}
-
-	start := u32(0)
-	limit := u32(0)
-	if contour != 0 {
-		start = hinter_program_ttf_get_zp(ctx, ctx.zp2.end_points, contour - 1) + 1
-	}
-	if ctx.gs.gep2 == 0 {
-		limit = u32(len(ctx.zp2.end_points))
-	} else {
-		limit = hinter_program_ttf_get_zp(ctx, ctx.zp2.end_points, contour) + 1
-	}
-
-	for i := start; i < limit; i += 1 {
-		if i != ref_p {
-			hinter_program_ttf_move_point(ctx, ctx.zp2, i, d, true)
-		}
-	}
-}
-
-hinter_program_ttf_ins_shz :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	contour := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	d, ref_zone, ref_p := hinter_program_compute_point_displacement(ctx)
-	if ctx.error {
-		return
-	}
-	if ref_zone != ctx.zp2 {
-		ref_p = 0xFFFFFFFF
-	}
-
-	limit := u32(0)
-	if ctx.gs.gep2 == 0 {
-		limit = u32(len(ctx.zp2.end_points))
-	} else {
-		limit = hinter_program_ttf_get_zp(ctx, ctx.zp2.end_points, contour)
-	}
-
-	for i := u32(0); i < limit; i += 1 {
-		if i != ref_p {
-			hinter_program_ttf_move_point(ctx, ctx.zp2, i, d, false)
-		}
-	}
-}
-
-hinter_program_ttf_is_twilight_zone :: proc(ctx: ^Hinter_Program_Execution_Context) -> bool {
+is_twilight_zone :: proc(ctx: ^Execution_Context) -> bool {
 	return ctx.gs.gep0 == 0 && ctx.gs.gep1 == 0 && ctx.gs.gep2 == 0
 }
 
-hinter_program_ttf_ins_shpix :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	amt := hinter_program_f2dot14_to_f32(i16(hinter_program_ttf_stack_pop(ctx, 1)[0]))
-	is_twilight_zone := hinter_program_ttf_is_twilight_zone(ctx)
-
-	for _ in 0..<ctx.gs.loop {
-		point_idx := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-		should_move := is_twilight_zone
-		if ! should_move && ctx.iup_state != TTF_HINTER_TOUCH_XY {
-			should_move = (ctx.is_compound_glyph && ctx.gs.free_vector.y != 0) ||
-			(hinter_program_ttf_get_zp(ctx, ctx.zp2.touch, point_idx) & TTF_HINTER_TOUCH_Y != 0)
-		}
-	
-		if should_move {
-			hinter_program_ttf_move_point(ctx, ctx.zp2, point_idx, amt, true)
-		}
-	}
-	ctx.gs.loop = 1
-}
-
-hinter_program_ttf_ins_ip :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	rp1_cur := hinter_program_ttf_get_zp(ctx, ctx.zp0.cur, ctx.gs.rp1)
-	rp2_cur := hinter_program_ttf_get_zp(ctx, ctx.zp1.cur, ctx.gs.rp2)
-
-	rp1_orig, rp2_orig: [2]f32
-
-	is_twilight_zone := hinter_program_ttf_is_twilight_zone(ctx)
-	if is_twilight_zone {
-		rp1_orig = hinter_program_ttf_get_zp(ctx, ctx.zp0.orig_scaled, ctx.gs.rp1)
-		rp2_orig = hinter_program_ttf_get_zp(ctx, ctx.zp1.orig_scaled, ctx.gs.rp2)
-	} else {
-		rp1_orig = hinter_program_ttf_get_zp(ctx, ctx.zp0.orig, ctx.gs.rp1)
-		rp2_orig = hinter_program_ttf_get_zp(ctx, ctx.zp1.orig, ctx.gs.rp2)
-	}
-
-	total_dist_cur := hinter_program_ttf_project(ctx, rp2_cur - rp1_cur)
-	total_dist_orig := hinter_program_ttf_dual_project(ctx, rp2_orig - rp1_orig)
-
-	for _ in 0..< ctx.gs.loop {
-		point_idx := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-
-		point_cur := hinter_program_ttf_get_zp(ctx, ctx.zp2.cur, point_idx)
-		zp_target := is_twilight_zone ? ctx.zp2.orig_scaled : ctx.zp2.orig
-		point_orig := hinter_program_ttf_get_zp(ctx, zp_target, point_idx)
-
-		dist_cur := hinter_program_ttf_project(ctx, point_cur - rp1_cur)
-		dist_orig := hinter_program_ttf_dual_project(ctx, point_orig - rp1_orig)
-		dist_new := f32(0)
-		if abs(total_dist_orig) > 0 {
-			dist_new = (dist_orig * total_dist_cur) / total_dist_orig
-		} else {
-			dist_new = dist_orig
-		}
-		hinter_program_ttf_move_point(ctx, ctx.zp2, point_idx, dist_new - dist_cur, true)
-	}
-
-	ctx.gs.loop = 1
-}
-
-hinter_program_ttf_ins_msirp :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-
-	distance := hinter_program_f26dot6_to_f32(values[0])
-	point := u32(values[1])
-
-	if ctx.gs.gep1 == 0 {
-		orig := hinter_program_ttf_get_zp(ctx, ctx.zp0.orig, ctx.gs.rp0)
-		hinter_program_ttf_set_zp(ctx, ctx.zp1.orig, point, orig)
-		hinter_program_ttf_move_point_orig(ctx, ctx.zp1, point, distance)
-		hinter_program_ttf_set_zp(ctx, ctx.zp1.cur, point, orig)
-	}
-
-	zp0_cur := hinter_program_ttf_get_zp(ctx, ctx.zp0.cur, ctx.gs.rp0)
-	zp1_cur := hinter_program_ttf_get_zp(ctx, ctx.zp1.cur, point)
-	distance_proj := hinter_program_ttf_project(ctx, zp1_cur - zp0_cur)
-	hinter_program_ttf_move_point(ctx, ctx.zp1, point, distance - distance_proj, true)
-
-	ctx.gs.rp1 = ctx.gs.rp0
-	ctx.gs.rp2 = point
-
-	if u8(ctx.ins) & 0x1 != 0 {
-		ctx.gs.rp0 = point
-	}
-	hinter_program_ttf_debug_log(ctx, "    rp0 = %v", ctx.gs.rp0)
-	hinter_program_ttf_debug_log(ctx, "    rp1 = %v", ctx.gs.rp1)
-	hinter_program_ttf_debug_log(ctx, "    rp2 = %v", ctx.gs.rp2)
-}
-
-hinter_program_ttf_ins_alignrp :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	rp0_cur := hinter_program_ttf_get_zp(ctx, ctx.zp0.cur, ctx.gs.rp0)
-	for _ in 0..<ctx.gs.loop {
-		point_idx := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-		cur := hinter_program_ttf_get_zp(ctx, ctx.zp1.cur, point_idx)
-		dist := hinter_program_ttf_project(ctx, rp0_cur - cur)
-		hinter_program_ttf_move_point(ctx, ctx.zp1, point_idx, dist, true)
-	}
-	ctx.gs.loop = 1
-}
-
-hinter_program_ttf_ins_rtdg :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ctx.gs.round_state = .to_double_grid
-}
-
-hinter_program_ttf_ins_miap :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	cvt_idx := u32(values[0])
-	point_idx := u32(values[1])
-
-	new_dist := hinter_program_ttf_get_cvt(ctx, cvt_idx)
-	cur: [2]f32
-	if ctx.gs.gep0 == 0 {
-		cur = new_dist * ctx.gs.free_vector
-		hinter_program_ttf_set_zp(ctx, ctx.zp0.orig_scaled, point_idx, cur)
-		hinter_program_ttf_set_zp(ctx, ctx.zp0.cur, point_idx, cur)
-	} else {
-		cur = hinter_program_ttf_get_zp(ctx, ctx.zp0.cur, point_idx)
-	}
-
-	cur_dist := hinter_program_ttf_project(ctx, cur)
-	ins := u8(ctx.ins)
-	if ins & 0x1 != 0 {
-		if abs(new_dist - cur_dist) > ctx.gs.control_value_cutin {
-			new_dist = cur_dist
-		}
-		new_dist = hinter_program_ttf_round_according_to_state(ctx, new_dist)
-	}
-	hinter_program_ttf_move_point(ctx, ctx.zp0, point_idx, new_dist - cur_dist, true)
-
-	ctx.gs.rp0 = point_idx
-	ctx.gs.rp1 = point_idx
-	hinter_program_ttf_debug_log(ctx, "    rp0 = %v", ctx.gs.rp0)
-	hinter_program_ttf_debug_log(ctx, "    rp1 = %v", ctx.gs.rp1)
-}
-
-hinter_program_ttf_ins_npushb :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	count := u8(hinter_program_ttf_instructions_next(ctx))
-	for _ in 0..<count {
-		v := hinter_program_ttf_instructions_next(ctx)
-		hinter_program_ttf_stack_push(ctx, [1]i32 { i32(v) })
-	}
-}
-
-hinter_program_ttf_ins_npushw :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	count := u8(hinter_program_ttf_instructions_next(ctx))
-	for _ in 0..<count {
-		ms := hinter_program_ttf_instructions_next(ctx)
-		ls := hinter_program_ttf_instructions_next(ctx)
-		v := i32(i16(u16(ms) << 8 | u16(ls)))
-		hinter_program_ttf_stack_push(ctx, [1]i32 { v })
-	}
-}
-
-hinter_program_ttf_ins_ws :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	value := values[0]
-	idx := u32(values[1])
-	hinter_program_ttf_set_storage(ctx, idx, value)
-}
-
-hinter_program_ttf_ins_rs :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	idx := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	val := hinter_program_ttf_get_storage(ctx, idx)
-	hinter_program_ttf_stack_push(ctx, [1]i32 { val })
-}
-
-hinter_program_ttf_ins_wcvtp :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	pixels := hinter_program_f26dot6_to_f32(values[0])
-	idx := u32(values[1])
-	hinter_program_ttf_set_cvt(ctx, idx, pixels)
-}
-
-hinter_program_ttf_ins_rcvt :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	idx := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	pixels := hinter_program_ttf_get_cvt(ctx, idx)
-	hinter_program_ttf_debug_log(ctx, "    cvt value: %v [%v]", pixels, idx)
-	hinter_program_ttf_stack_push(ctx, [1]i32 { hinter_program_f32_to_f26dot6(pixels) })
-}
-
-hinter_program_ttf_ins_gc :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	idx := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	ins := u8(ctx.ins)
-
-	val: f32
-	if ins & 0x1 != 0 {
-		orig_scaled := hinter_program_ttf_get_zp(ctx, ctx.zp2.orig_scaled, idx)
-		val = hinter_program_ttf_dual_project(ctx, orig_scaled)
-	} else {
-		cur := hinter_program_ttf_get_zp(ctx, ctx.zp2.cur, idx)
-		val = hinter_program_ttf_project(ctx, cur)
-	}
-
-	hinter_program_ttf_stack_push(ctx, [1]i32 { hinter_program_f32_to_f26dot6(val) })
-}
-
-hinter_program_ttf_ins_scfs :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	k := hinter_program_f26dot6_to_f32(values[0])
-	point_idx := u32(values[1])
-
-	projection := hinter_program_ttf_project(ctx, hinter_program_ttf_get_zp(ctx, ctx.zp2.cur, point_idx))
-	hinter_program_ttf_move_point(ctx, ctx.zp2, point_idx, projection - k, true)
-	if ctx.gs.gep2 == 0 {
-		twilight := hinter_program_ttf_get_zp(ctx, ctx.zp2.cur, point_idx)
-		hinter_program_ttf_set_zp(ctx, ctx.zp2.orig_scaled, point_idx, twilight)
-	}
-}
-
-hinter_program_ttf_ins_md :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	point_idx_0 := u32(values[0])
-	point_idx_1 := u32(values[1])
-
-	ins := u8(ctx.ins)
-	dist: f32
-	if ins & 1 != 0 {
-		cur_0 := hinter_program_ttf_get_zp(ctx, ctx.zp1.cur, point_idx_0)
-		cur_1 := hinter_program_ttf_get_zp(ctx, ctx.zp0.cur, point_idx_1)
-		dist = hinter_program_ttf_project(ctx, cur_1 - cur_0)
-	} else {
-		is_twilight := ctx.gs.gep0 == 0 || ctx.gs.gep1 == 0
-		if is_twilight {
-			orig_0 := hinter_program_ttf_get_zp(ctx, ctx.zp1.orig_scaled, point_idx_0)
-			orig_1 := hinter_program_ttf_get_zp(ctx, ctx.zp0.orig_scaled, point_idx_1)
-			dist = hinter_program_ttf_dual_project(ctx, orig_1 - orig_0)
-		} else {
-			orig_0 := hinter_program_ttf_get_zp(ctx, ctx.zp1.orig, point_idx_0)
-			orig_1 := hinter_program_ttf_get_zp(ctx, ctx.zp0.orig, point_idx_1)
-			dist = hinter_program_ttf_dual_project(ctx, orig_1 - orig_0) * ctx.program.funits_to_pixels_scale
-		}
-	}
-
-	hinter_program_ttf_stack_push(ctx, [1]i32 { hinter_program_f32_to_f26dot6(dist) })
-}
-
-hinter_program_ttf_ins_mppem :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	hinter_program_ttf_stack_push(ctx, [1]i32 { i32(ctx.program.ppem) })
-}
-
-hinter_program_ttf_ins_mps :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	hinter_program_ttf_stack_push(ctx, [1]i32 { hinter_program_f32_to_f26dot6(ctx.program.point_size) })
-}
-
-hinter_program_ttf_ins_flipon :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ctx.gs.auto_flip = true
-}
-
-hinter_program_ttf_ins_flipoff :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ctx.gs.auto_flip = false
-}
-
-hinter_program_ttf_ins_debug :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	hinter_program_ttf_stack_pop(ctx, 1)
-}
-
-hinter_program_ttf_ins_lt :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	e2 := values[0]
-	e1 := values[1]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { e1 < e2 ? 1 : 0 })
-}
-
-hinter_program_ttf_ins_lteq :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	e2 := values[0]
-	e1 := values[1]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { e1 <= e2 ? 1 : 0 })
-}
-
-hinter_program_ttf_ins_gt :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	e2 := values[0]
-	e1 := values[1]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { e1 > e2 ? 1 : 0 })
-}
-
-hinter_program_ttf_ins_gteq :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	e2 := values[0]
-	e1 := values[1]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { e1 >= e2 ? 1 : 0 })
-}
-
-hinter_program_ttf_ins_eq :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	e2 := values[0]
-	e1 := values[1]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { e1 == e2 ? 1 : 0 })
-}
-
-hinter_program_ttf_ins_neq :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	e2 := values[0]
-	e1 := values[1]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { e1 != e2 ? 1 : 0 })
-}
-
-hinter_program_ttf_ins_odd :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := hinter_program_f26dot6_to_f32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	value = hinter_program_ttf_round_according_to_state(ctx, value)
-	is_odd := hinter_program_f32_to_f26dot6(value) & 127 == 64
-	hinter_program_ttf_stack_push(ctx, [1]i32 { is_odd ? 1 : 0 })
-}
-
-hinter_program_ttf_ins_even :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	value := hinter_program_f26dot6_to_f32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	value = hinter_program_ttf_round_according_to_state(ctx, value)
-	is_even := hinter_program_f32_to_f26dot6(value) & 127 == 0
-	hinter_program_ttf_stack_push(ctx, [1]i32 { is_even ? 1 : 0 })
-}
-
-hinter_program_ttf_ins_if :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	val := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	if val != 0 {
-		return
-	}
-
-	n_ifs := 1
-	out := false
-	for ! out && ! ctx.error {
-		hinter_program_ttf_skip_code(ctx)
-		#partial switch ctx.ins {
-		case .ins_if:
-			n_ifs += 1
-		case .ins_else:
-			out = n_ifs == 1
-		case .ins_eif:
-			n_ifs -= 1
-			out = n_ifs == 0
-		}
-	}
-	// NOTE(lucas): eat last else/eif
-	hinter_program_ttf_instructions_next(ctx)
-}
-
-hinter_program_ttf_ins_eif :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	// no op
-}
-
-hinter_program_ttf_ins_and :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	e2 := values[0]
-	e1 := values[1]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { e1 != 0 && e2 != 0 ? 1 : 0 })
-}
-
-hinter_program_ttf_ins_or :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	e2 := values[0]
-	e1 := values[1]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { e1 != 0 || e2 != 0 ? 1 : 0 })
-}
-
-hinter_program_ttf_ins_not :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	val := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	hinter_program_ttf_stack_push(ctx, [1]i32 { val == 0 ? 1 : 0 })
-}
-
-hinter_program_ttf_ins_sdb :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	val := u16(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	ctx.gs.delta_base = val
-}
-
-hinter_program_ttf_ins_sds :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	val := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	ctx.gs.delta_shift = val
-}
-
-hinter_program_ttf_ins_add :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	hinter_program_ttf_stack_push(ctx, [1]i32 { values[0] + values[1] })
-}
-
-hinter_program_ttf_ins_sub :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	hinter_program_ttf_stack_push(ctx, [1]i32 { values[1] - values[0] })
-}
-
-hinter_program_ttf_ins_div :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	n1 := hinter_program_f26dot6_to_f32(values[0])
-	n2 := hinter_program_f26dot6_to_f32(values[1])
-
-	hinter_program_ttf_stack_push(ctx, [1]i32 { hinter_program_f32_to_f26dot6(n2 / n1) })
-}
-
-hinter_program_ttf_ins_mul :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	n1 := hinter_program_f26dot6_to_f32(values[0])
-	n2 := hinter_program_f26dot6_to_f32(values[1])
-
-	hinter_program_ttf_stack_push(ctx, [1]i32 { hinter_program_f32_to_f26dot6(n2 * n1) })
-}
-
-hinter_program_ttf_ins_abs :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	val := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { abs(val) })
-}
-
-hinter_program_ttf_ins_neg :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	val := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { -val })
-}
-
-hinter_program_ttf_ins_floor :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	val := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { i32(u32(val) & 0xFFFFFFC0) })
-}
-
-hinter_program_ttf_ins_ceiling :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	val := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { i32((u32(val) + 0x3F) & 0xFFFFFFC0) })
-}
-
-hinter_program_ttf_ins_round :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	val := hinter_program_f26dot6_to_f32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	val = hinter_program_ttf_round_according_to_state(ctx, val)
-	hinter_program_ttf_stack_push(ctx, [1]i32 { hinter_program_f32_to_f26dot6(val) })
-}
-
-hinter_program_ttf_ins_nround :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	// NOTE(lucas): we no-op here as we do not have engine compensation
-	// TODO(lucas): maybe we want compensation?
-}
-
-hinter_program_ttf_ins_wcvtf :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	funits := f32(u32(values[0]))
-	cvt_idx := u32(values[1])
-	hinter_program_ttf_set_cvt(ctx, cvt_idx, funits * ctx.program.funits_to_pixels_scale)
-}
-
-hinter_program_ttf_try_get_delta_value :: proc(ctx: ^Hinter_Program_Execution_Context, exc: u32, range: u32) -> (f32, bool) {
+try_get_delta_value :: proc(ctx: ^Execution_Context, exc: u32, range: u32) -> (f32, bool) {
 	ppem := ((exc & 0xF0) >> 4) + u32(ctx.gs.delta_base) + range
 	if ctx.program.ppem != ppem {
 		return {}, false
@@ -2401,353 +1473,10 @@ hinter_program_ttf_try_get_delta_value :: proc(ctx: ^Hinter_Program_Execution_Co
 	}
 
 	steps := i32(num_steps * (1 << (6 - ctx.gs.delta_shift)))
-	return hinter_program_f26dot6_to_f32(steps), true
+	return f26dot6_to_f32(steps), true
 }
 
-hinter_program_ttf_ins_deltap :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	range: u32 = 0
-	#partial switch ctx.ins {
-	case .ins_deltap1: range = 0
-	case .ins_deltap2: range = 16
-	case .ins_deltap3: range = 32
-	}
-
-	count := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	for _ in 0..<count {
-		values := hinter_program_ttf_stack_pop(ctx, 2)
-		point_index := u32(values[0])
-		exc := u32(values[1])
-		if delta, ok := hinter_program_ttf_try_get_delta_value(ctx, exc, range); ok {
-			touch_state := hinter_program_ttf_get_zp(ctx, ctx.zp0.touch, point_index)
-			a := ctx.iup_state != TTF_HINTER_TOUCH_XY
-			b := ctx.is_compound_glyph && ctx.gs.free_vector.y != 0
-			c := touch_state & TTF_HINTER_TOUCH_Y != 0
-			can_move := a && b || c
-			if can_move {
-				hinter_program_ttf_move_point(ctx, ctx.zp0, point_index, delta, true)
-			}
-		}
-	}
-}
-
-hinter_program_ttf_ins_deltac :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	range: u32 = 0
-	#partial switch ctx.ins {
-	case .ins_deltac1: range = 0
-	case .ins_deltac2: range = 16
-	case .ins_deltac3: range = 32
-	}
-	count := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	for _ in 0..<count {
-		values := hinter_program_ttf_stack_pop(ctx, 2)
-		cvt_index := u32(values[0])
-		exc := u32(values[1])
-		if delta, ok := hinter_program_ttf_try_get_delta_value(ctx, exc, range); ok {
-			hinter_program_ttf_add_cvt(ctx, cvt_index, delta)
-		}
-	}
-}
-
-hinter_program_ttf_ins_sround :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	hinter_program_error(ctx, "unimplemented instruction sround")
-}
-
-hinter_program_ttf_ins_s45round :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	hinter_program_error(ctx, "unimplemented instruction s45round")
-}
-
-hinter_program_ttf_ins_jrot :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	val := values[0]
-	off := values[1]
-	if val != 0 {
-		hinter_program_ttf_instructions_jump(ctx, off - 1)
-	}
-}
-
-hinter_program_ttf_ins_jrof :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	val := values[0]
-	off := values[1]
-	if val == 0 {
-		hinter_program_ttf_instructions_jump(ctx, off - 1)
-	}
-}
-
-hinter_program_ttf_ins_roff :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ctx.gs.round_state = .off
-}
-
-hinter_program_ttf_ins_rutg :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ctx.gs.round_state = .up_to_grid
-}
-
-hinter_program_ttf_ins_rdtg :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ctx.gs.round_state = .down_to_grid
-}
-
-hinter_program_ttf_ins_sangw :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	// NOTE(lucas): not even freetype runs this instruction
-}
-
-hinter_program_ttf_ins_aa :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	// NOTE(lucas): not even freetype runs this instruction
-}
-
-hinter_program_ttf_ins_flippt :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	hinter_program_error(ctx, "unimplemented instruction flippt")
-}
-
-hinter_program_ttf_ins_fliprgon :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	hinter_program_error(ctx, "unimplemented instruction fliprgon")
-}
-
-hinter_program_ttf_ins_fliprgoff :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	hinter_program_error(ctx, "unimplemented instruction fliprgoff")
-}
-
-hinter_program_ttf_ins_scanctrl :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	flags := u16(hinter_program_ttf_stack_pop(ctx, 1)[0])
-	thresh := u32(flags & 0xFF)
-	if thresh == 0xFF {
-		ctx.gs.scan_control = true
-	} else if thresh == 0 {
-		ctx.gs.scan_control = false
-	} else {
-		if flags & 0x100 != 0 && ctx.program.ppem <= thresh {
-			ctx.gs.scan_control = true
-		}
-		if flags & 0x200 != 0 && ctx.gs.is_rotated {
-			ctx.gs.scan_control = true
-		}
-		if flags & 0x400 != 0 && ctx.gs.is_stretched {
-			ctx.gs.scan_control = true
-		}
-		if flags & 0x800 != 0 && ctx.program.ppem > thresh {
-			ctx.gs.scan_control = false
-		}
-		if flags & 0x1000 != 0 && ! ctx.gs.is_rotated {
-			ctx.gs.scan_control = false
-		}
-		if flags & 0x2000 != 0 && ! ctx.gs.is_stretched {
-			ctx.gs.scan_control = false
-		}
-	}
-}
-
-hinter_program_ttf_ins_sdpvtl :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	ins := u8(ctx.ins)
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	p1_idx := u32(values[0])
-	p2_idx := u32(values[1])
-
-	p1 := hinter_program_ttf_get_zp(ctx, ctx.zp2.orig_scaled, p1_idx)
-	p2 := hinter_program_ttf_get_zp(ctx, ctx.zp1.orig_scaled, p2_idx)
-
-	ctx.gs.dual_vector = p2 - p1
-	if abs(ctx.gs.dual_vector.x) < HINTER_EPS && abs(ctx.gs.dual_vector.y) < HINTER_EPS {
-		ctx.gs.dual_vector = { 1, 0 }
-		ins = 0
-	}
-
-	if ins & 0x1 != 0 {
-		ctx.gs.dual_vector.x, ctx.gs.dual_vector.y = -ctx.gs.dual_vector.y, ctx.gs.dual_vector.x
-	}
-	ctx.gs.dual_vector = linalg.normalize0(ctx.gs.dual_vector)
-
-	p1 = hinter_program_ttf_get_zp(ctx, ctx.zp2.cur, p1_idx)
-	p2 = hinter_program_ttf_get_zp(ctx, ctx.zp1.cur, p2_idx)
-
-	ctx.gs.proj_vector = p2 - p1
-	if ins & 0x1 != 0 {
-		ctx.gs.proj_vector.x, ctx.gs.proj_vector.y = -ctx.gs.proj_vector.y, ctx.gs.proj_vector.x
-	}
-	ctx.gs.proj_vector = linalg.normalize0(ctx.gs.proj_vector)
-}
-
-hinter_program_ttf_ins_getinfo :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	selector := u16(hinter_program_ttf_stack_pop(ctx, 1)[0])
-
-	result: i32
-	if selector & 0x00000001 != 0 {
-		result = HINTER_TTF_SCALAR_VERSION
-	}
-
-	// Is the glyph rotated?
-	if ((selector & 0x00000002 != 0) && ctx.gs.is_rotated) {
-		result |= 1 << 8
-	}
-
-	// Is the glyph stretched?
-	if ((selector & 0x00000004 != 0) && ctx.gs.is_stretched) {
-		result |= 1 << 9
-	}
-
-	// Using Windows font smoothing grayscale?
-	// Note: FreeType enables this when using grayscale rendering
-	if ((selector & 0x00000020 != 0) && ! ctx.gs.is_subpixel_rendering) {
-		result |= 1 << 12
-	}
-
-	// Using subpixel hinting? 
-	// -- Always true in accordance with FreeType's V40 interpreter
-	if (selector & 0x00000040) != 0 {
-		result |= 1 << 13
-	}
-
-	// subpixel positioned?
-	// -- Always true in accordance with FreeType's V40 interpreter
-	if (selector & 1024) != 0 {
-		result |= 1 << 17
-	}
-	// symmetrical smoothing?
-	// -- Always true in accordance with FreeType's non mono font 
-	if (selector & 2048) != 0 {
-		result |= 1 << 18
-	}
-
-		// not using cleartype?
-	// -- Always true in accordance with FreeType's non mono font
-	if (selector & 4096) != 0 && ctx.program.clear_type_enabled {
-		result |= 1 << 19
-	}
-
-	hinter_program_ttf_debug_log(ctx, "    get info: %v", result)
-	hinter_program_ttf_stack_push(ctx, [1]i32 { result })
-}
-
-hinter_program_ttf_ins_idef :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	if ctx.stage == .glyph {
-		hinter_program_error(ctx, "bad stage")
-	}
-	if ctx.error {
-		return
-	}
-}
-
-hinter_program_ttf_ins_roll :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 3)
-	hinter_program_ttf_stack_push(ctx, [3]i32 { values[1], values[0], values[2] })
-}
-
-hinter_program_ttf_ins_max :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	e2 := values[0]
-	e1 := values[1]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { i32(max(e2, e1)) })
-}
-
-hinter_program_ttf_ins_min :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	e2 := values[0]
-	e1 := values[1]
-	hinter_program_ttf_stack_push(ctx, [1]i32 { i32(min(e2, e1)) })
-}
-
-hinter_program_ttf_ins_scantype :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	val := hinter_program_ttf_stack_pop(ctx, 1)[0]
-	if val >= 0 {
-		ctx.gs.scan_type = val & 0xFFFF
-	}
-}
-
-hinter_program_ttf_ins_instctrl :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	k := values[0]
-	l := values[1]
-	if k < 1 || k > 3 {
-		hinter_program_error(ctx, "instctrl error")
-		return
-	}
-	kf := i32(1 << u32(k - 1))
-	if l != 0 && l != kf {
-		hinter_program_error(ctx, "instctrl error")
-		return
-	}
-
-	switch ctx.stage {
-	case .glyph:
-	case .cvt:
-		ctx.gs.instruct_control &= ~u8(kf)
-		ctx.gs.instruct_control |= u8(l)
-	case .font:
-		hinter_program_error(ctx, "instctrl error")
-	}
-}
-
-hinter_program_ttf_ins_getvar :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	// NOTE(lucas): apparently this is some weird apple instruction
-	hinter_program_error(ctx, "unimplemented instruction getvar")
-}
-
-hinter_program_ttf_ins_getdata :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	// NOTE(lucas): apparently this is some weird apple instruction
-	hinter_program_error(ctx, "unimplemented instruction getdata")
-}
-
-hinter_program_ttf_ins_pushb :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	count := (u8(ctx.ins) & 0x7) + 1
-	for _ in 0..<count {
-		v := hinter_program_ttf_instructions_next(ctx)
-		hinter_program_ttf_stack_push(ctx, [1]i32 { i32(v) })
-	}
-}
-
-hinter_program_ttf_ins_pushw :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	count := (u8(ctx.ins) & 0x7) + 1
-	for _ in 0..<count {
-		ms := hinter_program_ttf_instructions_next(ctx)
-		ls := hinter_program_ttf_instructions_next(ctx)
-		v := i32(i16(u16(ms) << 8 | u16(ls)))
-		hinter_program_ttf_stack_push(ctx, [1]i32 { v })
-	}
-}
-
-hinter_program_ttf_ins_mdrp :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	point_idx := u32(hinter_program_ttf_stack_pop(ctx, 1)[0])
-
-	is_twilight_zone := ctx.gs.gep0 == 0 || ctx.gs.gep1 == 0
-	rp0_orig, point_orig: [2]f32
-
-	if is_twilight_zone {
-		rp0_orig = hinter_program_ttf_get_zp(ctx, ctx.zp0.orig_scaled, ctx.gs.rp0)
-		point_orig = hinter_program_ttf_get_zp(ctx, ctx.zp1.orig_scaled, point_idx)
-	} else {
-		rp0_orig = hinter_program_ttf_get_zp(ctx, ctx.zp0.orig, ctx.gs.rp0)
-		point_orig = hinter_program_ttf_get_zp(ctx, ctx.zp1.orig, point_idx)
-	}
-
-	rp0_cur := hinter_program_ttf_get_zp(ctx, ctx.zp0.cur, ctx.gs.rp0)
-	point_cur := hinter_program_ttf_get_zp(ctx, ctx.zp1.cur, point_idx)
-
-	dist_cur := hinter_program_ttf_project(ctx, point_cur - rp0_cur)
-	dist_orig := hinter_program_ttf_dual_project(ctx, point_orig - rp0_orig)
-
-	if ! is_twilight_zone {
-		dist_orig = dist_orig * ctx.program.funits_to_pixels_scale
-	}
-
-	dist_orig = hinter_program_ttf_apply_single_width_cut_in(ctx, dist_orig)	
-	ins := u8(ctx.ins)
-	if ins & 0x04 != 0 {
-		dist_orig = hinter_program_ttf_round_according_to_state(ctx, dist_orig)
-	}
-
-	if ins & 0x08 != 0 {
-		dist_orig = hinter_program_ttf_apply_min_dist(ctx, dist_orig)
-	}
-	hinter_program_ttf_move_point(ctx, ctx.zp1, point_idx, dist_orig - dist_cur, true)
-	ctx.gs.rp1 = ctx.gs.rp0
-	ctx.gs.rp2 = point_idx
-	if ins & 0x10 != 0 {
-		ctx.gs.rp0 = point_idx
-	}
-	hinter_program_ttf_debug_log(ctx, "    rp0 = %v", ctx.gs.rp0)
-	hinter_program_ttf_debug_log(ctx, "    rp1 = %v", ctx.gs.rp1)
-	hinter_program_ttf_debug_log(ctx, "    rp2 = %v", ctx.gs.rp2)
-}
-
-hinter_program_ttf_apply_single_width_cut_in :: proc(ctx: ^Hinter_Program_Execution_Context, value: f32) -> f32 {
+apply_single_width_cut_in :: proc(ctx: ^Execution_Context, value: f32) -> f32 {
 	absDiff := abs(value - ctx.gs.single_width_cutin)
 	if absDiff < ctx.gs.single_width_cutin {
 		if value < 0 {
@@ -2758,7 +1487,7 @@ hinter_program_ttf_apply_single_width_cut_in :: proc(ctx: ^Hinter_Program_Execut
 	return value
 }
 
-hinter_program_ttf_apply_min_dist :: proc(ctx: ^Hinter_Program_Execution_Context, value: f32) -> f32 {
+apply_min_dist :: proc(ctx: ^Execution_Context, value: f32) -> f32 {
 	if abs(value) < ctx.gs.min_distance {
 		if value < 0 {
 			return -ctx.gs.min_distance
@@ -2768,77 +1497,12 @@ hinter_program_ttf_apply_min_dist :: proc(ctx: ^Hinter_Program_Execution_Context
 	return value
 }
 
-hinter_program_ttf_ins_mirp :: proc(ctx: ^Hinter_Program_Execution_Context) {
-	values := hinter_program_ttf_stack_pop(ctx, 2)
-	cvt_idx := u32(values[0])
-	point_idx := u32(values[1])
-
-	val := hinter_program_ttf_get_cvt(ctx, cvt_idx)
-	cvt_val := hinter_program_ttf_apply_single_width_cut_in(ctx, val)
-
-	rp0_orig := hinter_program_ttf_get_zp(ctx, ctx.zp0.orig_scaled, ctx.gs.rp0)
-	rp0_cur := hinter_program_ttf_get_zp(ctx, ctx.zp0.cur, ctx.gs.rp0)
-
-	point_orig := hinter_program_ttf_get_zp(ctx, ctx.zp1.orig_scaled, point_idx)
-	point_cur := hinter_program_ttf_get_zp(ctx, ctx.zp1.cur, point_idx)
-	if ctx.gs.gep1 == 0 {
-		point_orig = rp0_orig + cvt_val * ctx.gs.free_vector
-		point_cur = point_orig
-		hinter_program_ttf_set_zp(ctx, ctx.zp1.orig_scaled, point_idx, point_orig)
-		hinter_program_ttf_set_zp(ctx, ctx.zp1.cur, point_idx, point_cur)
-	}
-
-	dist_cur := hinter_program_ttf_project(ctx, point_cur - rp0_cur)
-	dist_orig := hinter_program_ttf_dual_project(ctx, point_orig - rp0_orig)
-
-	if ctx.gs.auto_flip {
-		if ! hinter_program_same_sign(dist_orig, cvt_val) {
-			cvt_val = -cvt_val
-		}
-	}
-
-	dist_new: f32
-	ins := u8(ctx.ins)
-	if ins & 0x4 != 0 {
-		if ctx.gs.gep0 == ctx.gs.gep1 {
-			if abs(cvt_val - dist_orig) > ctx.gs.control_value_cutin {
-				cvt_val = dist_orig
-			}
-		}
-		dist_new = hinter_program_ttf_round_according_to_state(ctx, cvt_val)
-	} else {
-		dist_new = cvt_val
-	}
-
-	if ins & 0x8 != 0 {
-		if dist_orig >= 0 {
-			if dist_new < ctx.gs.min_distance {
-				dist_new = ctx.gs.min_distance
-			}
-		} else {
-			if dist_new > -ctx.gs.min_distance {
-				dist_new = -ctx.gs.min_distance
-			}
-		}
-	}
-
-	hinter_program_ttf_move_point(ctx, ctx.zp1, point_idx, dist_new - dist_cur, true)
-	ctx.gs.rp1 = ctx.gs.rp0
-	ctx.gs.rp2 = point_idx
-	if ins & 0x10 != 0 {
-		ctx.gs.rp0 = point_idx
-	}
-	hinter_program_ttf_debug_log(ctx, "    rp0 = %v", ctx.gs.rp0)
-	hinter_program_ttf_debug_log(ctx, "    rp1 = %v", ctx.gs.rp1)
-	hinter_program_ttf_debug_log(ctx, "    rp2 = %v", ctx.gs.rp2)
-}
-
-hinter_program_context_make :: proc(program: ^Hinter_Program, stage: Ttf_Hinter_Stage, is_compound_glyph: bool, debug: bool, instructions: []byte, scratch: mem.Allocator) -> Hinter_Program_Execution_Context {
-	program_ctx: Hinter_Program_Execution_Context
+context_make :: proc(program: ^Hinter_Program, stage: Stage, is_compound_glyph: bool, debug: bool, instructions: []byte, scratch: mem.Allocator) -> Execution_Context {
+	program_ctx: Execution_Context
 	program_ctx.program = program
 	program_ctx.is_compound_glyph = is_compound_glyph
 	program_ctx.stage = stage
-	program_ctx.gs = HINTER_PROGRAM_TTF_GRAPHICS_STATE_DEFAULT
+	program_ctx.gs = GRAPHICS_STATE_DEFAULT
 	program_ctx.zp0 = &program.zone1
 	program_ctx.zp1 = &program.zone1
 	program_ctx.zp2 = &program.zone1
@@ -2850,14 +1514,14 @@ hinter_program_context_make :: proc(program: ^Hinter_Program, stage: Ttf_Hinter_
 	return program_ctx
 }
 
-hinter_program_load_font_wide_program :: proc(font: ^ttf.Font) -> (^Hinter_Font_Wide_Data, bool) {
+load_font_wide_program :: proc(font: ^ttf.Font) -> (^Font_Wide_Data, bool) {
 	_load :: proc(f: ^ttf.Font) -> (ttf.Table_Entry, ttf.Font_Error) {
 		maxp, ok := ttf.get_table(f, .maxp, ttf.load_maxp_table, ttf.Maxp_Table)
 		if ! ok {
 			return {}, .Missing_Required_Table
 		}
 		_, font_data, shared_instructions, err := memory.make_multi(
-			memory.Make_Multi(^Hinter_Font_Wide_Data) {},
+			memory.Make_Multi(^Font_Wide_Data) {},
 			memory.Make_Multi([][]byte) { len = int(maxp.data.v1_0.max_function_defs) },
 			f.allocator,
 		)
@@ -2879,19 +1543,19 @@ hinter_program_load_font_wide_program :: proc(font: ^ttf.Font) -> (^Hinter_Font_
 
 		fpgm, _ := ttf.get_table_data(f, .fpgm)
 
-		program_ctx := hinter_program_context_make(&program, .font, false, false, fpgm, {})
-		font_data.bad_font_program = ! hinter_program_ttf_execute(&program_ctx)
+		program_ctx := context_make(&program, .font, false, false, fpgm, {})
+		font_data.bad_font_program = ! execute(&program_ctx)
 		return { font_data }, nil
 	}
-	return ttf.get_table(font, .fpgm, _load, Hinter_Font_Wide_Data)
+	return ttf.get_table(font, .fpgm, _load, Font_Wide_Data)
 }
 
-hinter_program_make :: proc(font: ^ttf.Font, pt_size: f32, dpi: f32, allocator: mem.Allocator, debug := false) -> (^Hinter_Program, bool) {
+program_make :: proc(font: ^ttf.Font, pt_size: f32, dpi: f32, allocator: mem.Allocator, debug := false) -> (^Hinter_Program, bool) {
 	if .HINTING not_in font.features {
 		return {}, false
 	}
 
-	font_data, has_font_data := hinter_program_load_font_wide_program(font)
+	font_data, has_font_data := load_font_wide_program(font)
 	if ! has_font_data || font_data.bad_font_program {
 		return {}, false
 	}
@@ -2943,22 +1607,22 @@ hinter_program_make :: proc(font: ^ttf.Font, pt_size: f32, dpi: f32, allocator: 
 	}
 
 	prep, _ := ttf.get_table_data(font, .prep)
-	program_ctx := hinter_program_context_make(program, .cvt, false, debug, prep, {})
+	program_ctx := context_make(program, .cvt, false, debug, prep, {})
 
-	if ! hinter_program_ttf_execute(&program_ctx) {
+	if ! execute(&program_ctx) {
 		return {}, false
 	}
 	ok = true
 	return program, true
 }
 
-hinter_program_delete :: proc(hinter: ^Hinter_Program) {
+program_delete :: proc(hinter: ^Hinter_Program) {
 	if hinter != nil {
 		free(hinter.base_ptr, hinter.allocator)
 	}
 }
 
-hinter_program_same_sign :: proc(a, b: f32) -> bool {
+same_sign :: proc(a, b: f32) -> bool {
 	if a < 0 {
 		return b < 0
 	} else {
@@ -2966,7 +1630,7 @@ hinter_program_same_sign :: proc(a, b: f32) -> bool {
 	}
 }
 
-hinter_program_hint_glyph :: proc(program: ^Hinter_Program, glyph_id: ttf.Glyph, allocator: mem.Allocator, debug := false) -> (ttf.Extracted_Simple_Glyph, bool) {
+hint_glyph :: proc(program: ^Hinter_Program, glyph_id: ttf.Glyph, allocator: mem.Allocator, debug := false) -> (ttf.Extracted_Simple_Glyph, bool) {
 	scratch := memory.arena_scratch({ allocator })
 
 	glyphs_to_hint := make([dynamic]Glyph_Job, 0, 8, scratch)
@@ -3095,7 +1759,7 @@ hinter_program_hint_glyph :: proc(program: ^Hinter_Program, glyph_id: ttf.Glyph,
 
 		if len(glyph_instructions) > 0 {
 			memory.scratch_temp_scope(scratch)
-			program_ctx := hinter_program_context_make(program, .glyph, is_compound, debug, glyph_instructions, scratch)
+			program_ctx := context_make(program, .glyph, is_compound, debug, glyph_instructions, scratch)
 
 			when HINTER_DEBUG_ENABLED {
 				if debug {
@@ -3106,7 +1770,7 @@ hinter_program_hint_glyph :: proc(program: ^Hinter_Program, glyph_id: ttf.Glyph,
 				}
 			}
 
-			if ! hinter_program_ttf_execute(&program_ctx) {
+			if ! execute(&program_ctx) {
 				return {}, false
 			}
 
@@ -3146,7 +1810,7 @@ hinter_program_hint_glyph :: proc(program: ^Hinter_Program, glyph_id: ttf.Glyph,
 				p = transform_coordinate(g.transform, p)
 			}
 
-			if ! hinter_program_same_sign(local_transform[0, 0], local_transform[1, 1]) {
+			if ! same_sign(local_transform[0, 0], local_transform[1, 1]) {
 				group_to_wind := winding_fixup[glyph_i - g.child_length + 1:glyph_i + 1]
 				for &wind in group_to_wind {
 					wind = ! wind

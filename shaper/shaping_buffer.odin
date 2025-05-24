@@ -5,7 +5,7 @@ import "core:unicode/utf8"
 Shaping_Buffer :: struct {
 	// Input text data
 	text:              string, // Original text
-	runes:             []rune, // Unicode codepoints
+	runes:             [dynamic]rune, // Unicode codepoints
 
 	// Output glyph data
 	glyphs:            [dynamic]Glyph_Info, // Output shaped glyphs
@@ -119,6 +119,7 @@ create_shaping_buffer :: proc() -> ^Shaping_Buffer {
 	// Initialize dynamic arrays
 	buffer.glyphs = make([dynamic]Glyph_Info)
 	buffer.positions = make([dynamic]Glyph_Position)
+	buffer.runes = make([dynamic]rune)
 
 	// Initialize scratch arrays
 	buffer.scratch.glyphs = make([dynamic]Glyph_Info)
@@ -148,6 +149,7 @@ destroy_shaping_buffer :: proc(buffer: ^Shaping_Buffer) {
 	// Free the output arrays
 	delete(buffer.glyphs)
 	delete(buffer.positions)
+	delete(buffer.runes)
 
 	// Free the scratch arrays
 	delete(buffer.scratch.glyphs)
@@ -168,6 +170,7 @@ clear_shaping_buffer :: proc(buffer: ^Shaping_Buffer) {
 	// Clear output arrays (keep capacity)
 	clear(&buffer.glyphs)
 	clear(&buffer.positions)
+	clear(&buffer.runes)
 
 	// Clear scratch arrays (keep capacity)
 	clear(&buffer.scratch.glyphs)
@@ -197,12 +200,13 @@ set_script :: proc(buffer: ^Shaping_Buffer, script: Script_Tag, language: Langua
 prepare_text :: proc(buf: ^Shaping_Buffer, text: string) {
 	if buf == nil {return}
 	clear_shaping_buffer(buf)
-	// We can't reuse the old buf; so delete it
-	if buf.runes != nil {delete(buf.runes)}
+
 
 	// Set new text
 	buf.text = text
-	buf.runes = utf8.string_to_runes(text)
+	// extract runes:
+	for r in text {append(&buf.runes, r)}
+
 
 	// Reset processing boundaries
 	buf.cursor = 0

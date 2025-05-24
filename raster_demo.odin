@@ -240,7 +240,7 @@ render_text :: proc(
 	glyf, has_glyf := ttf.get_table(font, .glyf, ttf.load_glyf_table, ttf.Glyf_Table)
 	assert(has_glyf)
 
-	hinter_program, hinter_ok := hinter.hinter_program_make(font, 11, 96, context.temp_allocator)
+	hinter_program, hinter_ok := hinter.program_make(font, 11, 96, context.temp_allocator)
 	assert(hinter_ok)
 
 	// Place each glyph

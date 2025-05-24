@@ -47,10 +47,11 @@ shape_text_with_font :: proc(
 		actual_features,
 		disabled_features,
 	)
-	fmt.println("GSUB Lookups: ", cache.gsub_lookups)
+	// fmt.println("GSUB Lookups: ", cache.gsub_lookups)
 	// Shape the text with the buffer and cache
 	ok = shape_with_cache(engine, font, buffer, cache)
 	if !ok {
+		fmt.println("Failed to Shape")
 		release_buffer(engine, buffer)
 		return nil, false
 	}

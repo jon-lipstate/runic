@@ -70,12 +70,12 @@ when ODIN_OS == .Windows {
 			defer ttf.destroy_font(font)
 
 			// NOTE(lucas): we are not testing hintin the actual glyphs yet
-			hinter, hinter_ok := hinter_program_make(font, 11, 96, allocator)
+			hinter, hinter_ok := program_make(font, 11, 96, allocator)
 			testing.expect(t, hinter_ok, file)
 
-			hinter_program_hint_glyph(hinter, 0, context.temp_allocator)
+			hint_glyph(hinter, 0, context.temp_allocator)
 
-			hinter_program_delete(hinter)
+			program_delete(hinter)
 		}
 	}
 }
