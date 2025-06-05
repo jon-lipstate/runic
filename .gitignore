@@ -4,7 +4,6 @@
 *.otf
 *.txt
 *.xml
-*.md
 *.py
 *.rdbg
 .VSCodeCounter/
@@ -12,3 +11,4 @@ scraper/
 *.bmp
 *.spall
 *.rdi
+*claude*

@@ -99,7 +99,7 @@ get_glyph_from_subtable :: proc(
 			f0 := subtable.data.(^Format0)
 			glyph_id := get_format0_glyph_id(data, f0, u8(codepoint))
 			// Debug: print values
-			// fmt.printf("Format 0 lookup: codepoint %d -> glyph %d\n", codepoint, glyph_id)
+			// fmt.printf("Format 0 lookup: codepoint %v -> glyph %v\n", codepoint, glyph_id)
 			return Glyph(glyph_id), glyph_id != 0
 		}
 
@@ -172,7 +172,7 @@ get_glyph_from_subtable :: proc(
 			// 	fmt.println("Full segment list for control character:", codepoint)
 			// 	for i: uint = 0; i < min(f4.segment_count, 20); i += 1 {
 			// 		sc, ec, _, _ := get_format4_segment(data, f4, i)
-			// 		fmt.printf("Segment %d: %d-%d\n", i, sc, ec)
+			// 		fmt.printf("Segment %v: %v-%v\n", i, sc, ec)
 			// 	}
 			// }
 
@@ -185,7 +185,7 @@ get_glyph_from_subtable :: proc(
 				)
 
 				// fmt.printf(
-				// 	"Binary search: mid=%d, range=%d-%d, char=%d\n",
+				// 	"Binary search: mid=%v, range=%v-%v, char=%v\n",
 				// 	mid,
 				// 	start_code,
 				// 	end_code,
@@ -207,7 +207,7 @@ get_glyph_from_subtable :: proc(
 			}
 
 			// fmt.printf(
-			// 	"Search result: found=%v, last segment=%d-%d\n",
+			// 	"Search result: found=%v, last segment=%v-%v\n",
 			// 	found,
 			// 	start_code,
 			// 	end_code,
@@ -219,7 +219,7 @@ get_glyph_from_subtable :: proc(
 					// Simple delta calculation
 					glyph_id := u16((int(char_code) + int(id_delta)) & 0xFFFF)
 					// fmt.printf(
-					// 	"Simple delta calculation: char=%d + delta=%d = glyph=%d\n",
+					// 	"Simple delta calculation: char=%v + delta=%v = glyph=%v\n",
 					// 	char_code,
 					// 	id_delta,
 					// 	glyph_id,
@@ -238,7 +238,7 @@ get_glyph_from_subtable :: proc(
 						id_range_offset_loc + uint(id_range_offset) + uint(index_offset * 2)
 
 					// fmt.printf(
-					// 	"Complex calculation: idRangeOffset=%d, index_offset=%d, final_addr=%d\n",
+					// 	"Complex calculation: idRangeOffset=%v, index_offset=%v, final_addr=%v\n",
 					// 	id_range_offset,
 					// 	index_offset,
 					// 	glyph_id_address,
@@ -252,7 +252,7 @@ get_glyph_from_subtable :: proc(
 							glyph_id = u16((int(glyph_id) + int(id_delta)) & 0xFFFF)
 						}
 
-						// fmt.printf("Final glyph ID: %d\n", glyph_id)
+						// fmt.printf("Final glyph ID: %v\n", glyph_id)
 						return Glyph(glyph_id), glyph_id != 0
 					} else {
 						// fmt.println("Error: glyph_id_address out of bounds")
@@ -264,7 +264,7 @@ get_glyph_from_subtable :: proc(
 				return 0, false
 			} else {
 				// No segment contains this character
-				// fmt.printf("No segment found for character %d (0x%X)\n", char_code, char_code)
+				// fmt.printf("No segment found for character %v (0x%X)\n", char_code, char_code)
 				return 0, false
 			}
 		}

@@ -370,36 +370,85 @@ prepare_shaped_text :: proc(
 	return true
 }
 
+// Render buffer struct - a view into a shaping buffer without allocation
+Render_Buffer :: struct {
+	// Only rendering-relevant metadata
+	direction: shaper.Direction, // Affects layout (RTL vs LTR)
+	// Slices pointing into the original buffer (no allocation)
+	glyphs:    []shaper.Glyph_Info,
+	positions: []shaper.Glyph_Position,
+}
 
-// 2D convenience wrapper
+// Create a render buffer that's a view into a shaping buffer range
+create_render_buffer :: proc(
+	original: ^shaper.Shaping_Buffer,
+	start: int = 0,
+	end: int = -1,
+) -> Render_Buffer {
+	glyph_count := len(original.glyphs)
+	actual_start := clamp(start, 0, glyph_count)
+	actual_end := end >= 0 ? end : glyph_count
+	actual_end = clamp(actual_end, actual_start, glyph_count)
+
+	return Render_Buffer {
+		direction = original.direction,
+		glyphs = original.glyphs[actual_start:actual_end],
+		positions = original.positions[actual_start:actual_end],
+	}
+}
+
+// Core 2D rendering function - only works with render buffers
 render_text_2d :: proc(
 	r: ^OpenGL_Renderer,
 	face: ^OpenGL_Font_Face_Instance,
-	buf: ^shaper.Shaping_Buffer,
+	render_buf: ^Render_Buffer,
 	screen_width, screen_height: int,
-	position: [2]f32, // 2D position is fine here
+	position: [2]f32,
 	color: [4]f32 = {1, 1, 1, 1},
-	rotation: f32 = 0, // radians
+	rotation: f32 = 0,
 	scale: f32 = 1,
 ) {
 	projection := glsl.mat4Ortho3d(0, f32(screen_width), 0, f32(screen_height), -1, 1)
 	view := glsl.mat4(1.0)
 
-	// Build model matrix from 2D parameters
 	translation := glsl.mat4Translate({position.x, position.y, 0})
 	rotation_mat := glsl.mat4Rotate({0, 0, 1}, rotation)
 	scale_mat := glsl.mat4Scale({scale, scale, 1})
-
 	model := translation * rotation_mat * scale_mat
 
-	render_text(r, face, buf, projection, view, model, color, 1, true, 1)
+	render_text(r, face, render_buf, projection, view, model, color, 1, true, 1)
 }
 
-// 3D convenience wrapper for billboards
-render_text_billboard :: proc(
+// Convenience wrapper for shaping buffers
+render_text_2d_shaping_buffer :: proc(
 	r: ^OpenGL_Renderer,
 	face: ^OpenGL_Font_Face_Instance,
 	buf: ^shaper.Shaping_Buffer,
+	screen_width, screen_height: int,
+	position: [2]f32,
+	color: [4]f32 = {1, 1, 1, 1},
+	rotation: f32 = 0,
+	scale: f32 = 1,
+) {
+	render_buf := create_render_buffer(buf)
+	render_text_2d(
+		r,
+		face,
+		&render_buf,
+		screen_width,
+		screen_height,
+		position,
+		color,
+		rotation,
+		scale,
+	)
+}
+
+// 3D convenience wrapper for billboards - works with render buffers
+render_text_billboard :: proc(
+	r: ^OpenGL_Renderer,
+	face: ^OpenGL_Font_Face_Instance,
+	render_buf: ^Render_Buffer,
 	world_position: [3]f32,
 	camera_pos, camera_up: [3]f32,
 	projection, view: matrix[4, 4]f32,
@@ -410,7 +459,33 @@ render_text_billboard :: proc(
 	if scale != 1 {
 		billboard = billboard * glsl.mat4Scale({scale, scale, 1})
 	}
-	render_text(r, face, buf, projection, view, billboard, color)
+	render_text(r, face, render_buf, projection, view, billboard, color)
+}
+
+// Convenience wrapper for 3D billboards with shaping buffers
+render_text_billboard_shaping_buffer :: proc(
+	r: ^OpenGL_Renderer,
+	face: ^OpenGL_Font_Face_Instance,
+	buf: ^shaper.Shaping_Buffer,
+	world_position: [3]f32,
+	camera_pos, camera_up: [3]f32,
+	projection, view: matrix[4, 4]f32,
+	color: [4]f32 = {1, 1, 1, 1},
+	scale: f32 = 1,
+) {
+	render_buf := create_render_buffer(buf)
+	render_text_billboard(
+		r,
+		face,
+		&render_buf,
+		world_position,
+		camera_pos,
+		camera_up,
+		projection,
+		view,
+		color,
+		scale,
+	)
 }
 
 create_billboard_matrix :: proc(world_pos, camera_pos, camera_up: [3]f32) -> matrix[4, 4]f32 {
@@ -592,8 +667,8 @@ upload_gpu_buffers :: proc(face: ^OpenGL_Font_Face_Instance) {
 	check_gl_error("Buffer upload")
 }
 
-// 3. Main render function
-render_text :: proc(
+// Convenience wrapper for old render_text API - converts to render buffer internally
+render_text_from_shaping_buffer :: proc(
 	r: ^OpenGL_Renderer,
 	face: ^OpenGL_Font_Face_Instance,
 	buf: ^shaper.Shaping_Buffer,
@@ -606,22 +681,49 @@ render_text :: proc(
 	multi_sampling: i32 = 0,
 	enable_control_points_visualization := false,
 ) {
-	if len(buf.glyphs) == 0 {
-		fmt.println("DEBUG: No glyphs in buffer!")
-		return
-	}
+	render_buf := create_render_buffer(buf)
+	render_text(
+		r,
+		face,
+		&render_buf,
+		projection,
+		view,
+		model,
+		color,
+		anti_alias_filter_size,
+		use_super_sampling,
+		multi_sampling,
+		enable_control_points_visualization,
+	)
+}
+
+// Core render function - only works with render buffers
+render_text :: proc(
+	r: ^OpenGL_Renderer,
+	face: ^OpenGL_Font_Face_Instance,
+	render_buf: ^Render_Buffer,
+	projection: matrix[4, 4]f32,
+	view: matrix[4, 4]f32,
+	model: matrix[4, 4]f32 = 1,
+	color: [4]f32 = {1, 1, 1, 1},
+	anti_alias_filter_size: f32 = 1.0,
+	use_super_sampling := true,
+	multi_sampling: i32 = 0,
+	enable_control_points_visualization := false,
+) {
+	if len(render_buf.glyphs) == 0 {return}
 
 	gl.UseProgram(r.shader_program)
 	check_gl_error("UseProgram")
-
 	defer gl.UseProgram(0)
-	// we need these as pointers, so re-declare to get access as a variable instead of parameter:
+
+	// Local copies for address-taking
 	projection := projection
 	view := view
 	model := model
 	color := color
 
-	// anti-aliasing:
+	// Set uniforms (same as original render_text)
 	aa_window_loc := gl.GetUniformLocation(r.shader_program, "antiAliasingWindowSize")
 	gl.Uniform1f(aa_window_loc, anti_alias_filter_size)
 
@@ -637,18 +739,12 @@ render_text :: proc(
 	)
 	gl.Uniform1i(control_points_loc, enable_control_points_visualization ? 1 : 0)
 
-	// Set uniforms
 	proj_loc := gl.GetUniformLocation(r.shader_program, "projection")
 	gl.UniformMatrix4fv(proj_loc, 1, false, &projection[0, 0])
-	if proj_loc == -1 {
-		fmt.println("DEBUG: Failed to find 'projection' uniform!")
-	}
 	view_loc := gl.GetUniformLocation(r.shader_program, "view")
 	gl.UniformMatrix4fv(view_loc, 1, false, &view[0, 0])
-
 	model_loc := gl.GetUniformLocation(r.shader_program, "model")
 	gl.UniformMatrix4fv(model_loc, 1, false, &model[0, 0])
-
 	color_loc := gl.GetUniformLocation(r.shader_program, "color")
 	gl.Uniform4fv(color_loc, 1, &color[0])
 
@@ -663,38 +759,35 @@ render_text :: proc(
 	curves_loc := gl.GetUniformLocation(r.shader_program, "curves")
 	gl.Uniform1i(curves_loc, 1)
 
-	// Generates vertices on-the-fly 
+	// Generate vertices on-the-fly
 	clear(&r.scratch_indices)
 	clear(&r.scratch_vertices)
 
-	// cursor position
 	pen: [2]f32
 
-	for i in 0 ..< len(buf.glyphs) {
-		glyph_info := buf.glyphs[i]
-		position := buf.positions[i]
+	for i in 0 ..< len(render_buf.glyphs) {
+		glyph_info := render_buf.glyphs[i]
+		position := render_buf.positions[i]
 
 		buffer_index, exists := face.glyph_to_index[glyph_info.glyph_id]
 		if !exists {continue}
 
-		// Use metrics from the shaped glyph
 		bounds := face.glyph_bounds[buffer_index]
 
 		// Calculate screen position using stored bounds
 		x := pen.x + f32(position.x_offset) * face.scale_factor
 		y := pen.y + f32(position.y_offset) * face.scale_factor
 
-		// Use stored bounds for quad positioning
 		left := x + bounds.left * face.scale_factor
 		bottom := y + bounds.bottom * face.scale_factor
 		right := left + bounds.width * face.scale_factor
 		top := bottom + bounds.height * face.scale_factor
 
-		// UVs are always 0-1 now (curves are normalized per-glyph)
+		// UVs are always 0-1 (curves are normalized per-glyph)
 		uv_left, uv_bottom: f32 = 0.0, 0.0
 		uv_right, uv_top: f32 = 1.0, 1.0
 
-		// Generate quad 
+		// Generate quad
 		base_vertex := u32(len(r.scratch_vertices))
 		append(
 			&r.scratch_vertices,
@@ -712,17 +805,16 @@ render_text :: proc(
 	}
 
 	if len(r.scratch_indices) == 0 {
-		fmt.println("DEBUG: No indices generated!")
 		return
 	}
 
-	// Upload vertex data (GL_STREAM_DRAW like Green Lightning)
+	// Upload vertex data
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vbo)
 	gl.BufferData(
 		gl.ARRAY_BUFFER,
 		len(r.scratch_vertices) * size_of(Vertex),
 		raw_data(r.scratch_vertices),
-		gl.STREAM_DRAW, // Data changes every frame
+		gl.STREAM_DRAW,
 	)
 
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.ebo)
@@ -730,7 +822,7 @@ render_text :: proc(
 		gl.ELEMENT_ARRAY_BUFFER,
 		len(r.scratch_indices) * size_of(u32),
 		raw_data(r.scratch_indices),
-		gl.STREAM_DRAW, // Data changes every frame
+		gl.STREAM_DRAW,
 	)
 
 	// Setup vertex attributes and draw
@@ -749,6 +841,6 @@ render_text :: proc(
 check_gl_error :: proc(location: string) {
 	error := gl.GetError()
 	if error != gl.NO_ERROR {
-		fmt.printf("OpenGL error at %s: %d\n", location, error)
+		fmt.printf("OpenGL error at %s: %v\n", location, error)
 	}
 }

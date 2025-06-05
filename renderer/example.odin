@@ -70,7 +70,7 @@ setup :: proc() -> bool {
 		return false
 	}
 	// fmt.printf(
-	// 	"DEBUG: Font loaded - units_per_em: %d, num_glyphs: %d\n",
+	// 	"DEBUG: Font loaded - units_per_em: %v, num_glyphs: %v\n",
 	// 	font.units_per_em,
 	// 	font.num_glyphs,
 	// )
@@ -154,7 +154,7 @@ main :: proc() {
 	gl.load_up_to(3, 3, glfw.gl_set_proc_address)
 
 	// major, minor, rev := glfw.GetVersion()
-	// fmt.printf("GLFW Version: %d.%d.%d\n", major, minor, rev)
+	// fmt.printf("GLFW Version: %v.%v.%v\n", major, minor, rev)
 	// fmt.println("OpenGL Version:", gl.GetString(gl.VERSION))
 	// fmt.println("OpenGL Vendor:", gl.GetString(gl.VENDOR))
 	// fmt.println("OpenGL Renderer:", gl.GetString(gl.RENDERER))
@@ -211,7 +211,7 @@ main :: proc() {
 		// view := glsl.mat4(1)
 		// // model := glsl.mat4Translate({-f32(width) / 2, 0, 0})
 
-		render_text(
+		render_text_from_shaping_buffer(
 			&renderer,
 			face,
 			shaped_text,
@@ -224,7 +224,7 @@ main :: proc() {
 			multi_sampling,
 			enable_control_points_visualization,
 		)
-		render_text(
+		render_text_from_shaping_buffer(
 			&renderer,
 			face,
 			shaped_text,
@@ -237,7 +237,7 @@ main :: proc() {
 			multi_sampling,
 			enable_control_points_visualization,
 		)
-		render_text(
+		render_text_from_shaping_buffer(
 			&renderer,
 			face,
 			shaped_text,
@@ -250,7 +250,7 @@ main :: proc() {
 			multi_sampling,
 			enable_control_points_visualization,
 		)
-		render_text(
+		render_text_from_shaping_buffer(
 			&renderer,
 			face,
 			shaped_text,
@@ -263,7 +263,7 @@ main :: proc() {
 			multi_sampling,
 			enable_control_points_visualization,
 		)
-		render_text(
+		render_text_from_shaping_buffer(
 			&renderer,
 			face,
 			shaped_text,
@@ -276,7 +276,7 @@ main :: proc() {
 			multi_sampling,
 			enable_control_points_visualization,
 		)
-		render_text(
+		render_text_from_shaping_buffer(
 			&renderer,
 			face,
 			shaped_text,
@@ -398,7 +398,7 @@ render_help_text :: proc(font_id: shaper.Font_ID, screen_width, screen_height: i
 		// 	true,
 		// )
 
-		render_text_2d(
+		render_text_2d_shaping_buffer(
 			&renderer,
 			help_face,
 			line_buffer,

@@ -171,7 +171,7 @@ create_outline_from_simple_extracted :: proc(
 		contour.is_clockwise = compute_contour_direction(&contour)
 
 		// fmt.printf(
-		// 	"Contour %d: %s, %d segments\n",
+		// 	"Contour %v: %s, %v segments\n",
 		// 	endpoint_idx,
 		// 	contour.is_clockwise ? "clockwise (filled)" : "counterclockwise (hole)",
 		// 	len(contour.segments),
@@ -219,7 +219,7 @@ test_simple_contour :: proc() {
 	success := create_segments_for_contour(&contour, test_points, test_on_curve, nil)
 
 	fmt.printf(
-		"Simple square test: %s, %d segments created\n",
+		"Simple square test: %s, %v segments created\n",
 		success ? "SUCCESS" : "FAILED",
 		len(contour.segments),
 	)
@@ -353,7 +353,7 @@ create_segments_for_contour :: proc(
 
 			if !processed_on_curve[end_idx] {
 				fmt.printf(
-					"ERROR: Expected on-curve point at %d after control point %d\n",
+					"ERROR: Expected on-curve point at %v after control point %v\n",
 					end_idx,
 					control_idx,
 				)
@@ -370,7 +370,7 @@ create_segments_for_contour :: proc(
 
 		} else {
 			fmt.printf(
-				"ERROR: Unexpected point configuration - current=%d (on_curve=%v), next=%d (on_curve=%v)\n",
+				"ERROR: Unexpected point configuration - current=%v (on_curve=%v), next=%v (on_curve=%v)\n",
 				current,
 				processed_on_curve[current],
 				next,
@@ -383,7 +383,7 @@ create_segments_for_contour :: proc(
 
 		if len(contour.segments) > total_points + 2 {
 			fmt.printf(
-				"ERROR: Too many segments created (%d), possible infinite loop\n",
+				"ERROR: Too many segments created (%v), possible infinite loop\n",
 				len(contour.segments),
 			)
 			return false

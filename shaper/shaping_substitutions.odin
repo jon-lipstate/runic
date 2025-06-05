@@ -1914,7 +1914,7 @@ apply_extension_substitution_subtable :: proc(
 	extended_subtable_offset := subtable_offset + uint(extension_offset)
 
 	// fmt.printf(
-	// 	"Extension redirecting to: %v at offset %d\n",
+	// 	"Extension redirecting to: %v at offset %v\n",
 	// 	extension_lookup_type,
 	// 	extended_subtable_offset,
 	// )

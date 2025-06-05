@@ -171,7 +171,7 @@ generate_switch_statement :: proc(enum_name: string, fields: []Entry) -> string 
 
 		strings.write_string(
 			&sb,
-			fmt.aprintf("    case .%s: return %d, %d\n", field_name, array_idx, bit_pos),
+			fmt.aprintf("    case .%s: return %v, %v\n", field_name, array_idx, bit_pos),
 		)
 	}
 

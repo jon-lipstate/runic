@@ -128,14 +128,14 @@ get_coverage_index :: proc(
 	found: bool,
 ) {
 	if bounds_check(coverage_offset + 2 > uint(len(data))) {
-		fmt.printf("Bounds check failed at coverage offset %d\n", coverage_offset)
+		fmt.printf("Bounds check failed at coverage offset %v\n", coverage_offset)
 		return 0, false
 	}
 	be_glyph_id := cast(Raw_Glyph)glyph_id
 
 	format := read_u16(data, coverage_offset)
 	// fmt.printf(
-	// 	"Checking coverage for glyph %d at offset %d, format: %d\n",
+	// 	"Checking coverage for glyph %v at offset %v, format: %v\n",
 	// 	be_glyph_id,
 	// 	coverage_offset,
 	// 	format,
@@ -149,7 +149,7 @@ get_coverage_index :: proc(
 		}
 
 		glyph_count := read_u16(data, coverage_offset + 2)
-		// fmt.printf("Format 1: Glyph count = %d\n", glyph_count)
+		// fmt.printf("Format 1: Glyph count = %v\n", glyph_count)
 
 		// Binary search for the glyph ID
 		low := 0
@@ -166,7 +166,7 @@ get_coverage_index :: proc(
 
 			current_glyph := cast(Raw_Glyph)read_u16be(data, glyph_offset)
 			// fmt.printf(
-			// 	"Comparing glyph %d at mid=%d (low=%d,high=%d)\n",
+			// 	"Comparing glyph %v at mid=%v (low=%v,high=%v)\n",
 			// 	current_glyph,
 			// 	mid,
 			// 	low,
@@ -179,7 +179,7 @@ get_coverage_index :: proc(
 				low = mid + 1
 			} else {
 				// Found the glyph
-				// fmt.printf("Match found at index %d\n", mid)
+				// fmt.printf("Match found at index %v\n", mid)
 				return u16(mid), true
 			}
 		}
@@ -193,7 +193,7 @@ get_coverage_index :: proc(
 		}
 
 		range_count := read_u16(data, coverage_offset + 2)
-		// fmt.printf("Format 2: Range count = %d\n", range_count)
+		// fmt.printf("Format 2: Range count = %v\n", range_count)
 
 		// Binary search for the range containing the glyph ID
 		low := 0
@@ -213,7 +213,7 @@ get_coverage_index :: proc(
 			start_coverage_index := read_u16(data, range_offset + 4)
 
 			// fmt.printf(
-			// 	"Checking range %d-%d at mid=%d (low=%d,high=%d)\n",
+			// 	"Checking range %v-%v at mid=%v (low=%v,high=%v)\n",
 			// 	start_glyph,
 			// 	end_glyph,
 			// 	mid,
@@ -228,14 +228,14 @@ get_coverage_index :: proc(
 			} else {
 				// Found the range, calculate the coverage index
 				index = start_coverage_index + u16(be_glyph_id - start_glyph)
-				// fmt.printf("Match found in range, index = %d\n", index)
+				// fmt.printf("Match found in range, index = %v\n", index)
 				return index, true
 			}
 		}
 
 		// fmt.println("Glyph not found in Format 2 coverage table")
 	} else {
-		// fmt.printf("Unsupported coverage format: %d\n", format)
+		// fmt.printf("Unsupported coverage format: %v\n", format)
 	}
 
 	// Glyph not found in the coverage table

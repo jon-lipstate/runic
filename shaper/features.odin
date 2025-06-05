@@ -205,7 +205,7 @@ process_feature :: proc(
 
 			for lookup_index in ttf.iter_lookup_index(&lookup_iter) {
 				if !lookup_set_contains(processed_lookups, lookup_index) {
-					// fmt.printf("Adding Lookup Index %d for %v\n", lookup_index, feature_tag)
+					// fmt.printf("Adding Lookup Index %v for %v\n", lookup_index, feature_tag)
 					lookup_set_add(processed_lookups, lookup_index)
 					append(lookup_indices, lookup_index)
 				}

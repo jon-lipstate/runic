@@ -237,14 +237,14 @@ build_coverage_digest :: proc(gsub: ^ttf.GSUB_Table, coverage_offset: uint) -> C
 
 	// Read coverage format
 	if coverage_offset + 2 > uint(len(gsub.raw_data)) {
-		fmt.printf("Coverage digest: offset out of bounds %d\n", coverage_offset)
+		fmt.printf("Coverage digest: offset out of bounds %v\n", coverage_offset)
 		return digest
 	}
 
 	format := ttf.read_u16(gsub.raw_data, coverage_offset)
 
 	if format != 1 && format != 2 {
-		fmt.printf("Coverage digest: invalid format %d at offset %d\n", format, coverage_offset)
+		fmt.printf("Coverage digest: invalid format %v at offset %v\n", format, coverage_offset)
 		return digest
 	}
 
@@ -634,7 +634,7 @@ accelerate_ligature_subtable :: proc(
 
 	// Ligature substitution only has format 1
 	if format != 1 {
-		fmt.printf("Unsupported Ligature subtable format: %d\n", format)
+		fmt.printf("Unsupported Ligature subtable format: %v\n", format)
 		return
 	}
 
@@ -774,7 +774,7 @@ accelerate_ligature_subtable :: proc(
 			append(seq_arr, sequence)
 
 			// fmt.printf(
-			// 	"Adding ligature sequence for glyph %d: components %v -> ligature %d\n",
+			// 	"Adding ligature sequence for glyph %v: components %v -> ligature %v\n",
 			// 	glyph,
 			// 	components,
 			// 	ligature_glyph,
@@ -796,7 +796,7 @@ accelerate_context_subtable :: proc(
 	if true { unimplemented() }
 
 	if format < 1 || format > 3 {
-		fmt.printf("Invalid Context format: %d\n", format)
+		fmt.printf("Invalid Context format: %v\n", format)
 		return
 	}
 
@@ -858,7 +858,7 @@ accelerate_chained_context_subtable :: proc(
 	format: u16,
 ) {
 	if format < 1 || format > 3 {
-		fmt.printf("Invalid ChainedContext format: %d\n", format)
+		fmt.printf("Invalid ChainedContext format: %v\n", format)
 		return
 	}
 
@@ -903,7 +903,7 @@ accelerate_chained_context_format1 :: proc(
 
 	// Create coverage digest if needed
 	if _, has_digest := accel.coverage_digest[abs_coverage_offset]; !has_digest {
-		// fmt.printf("Creating digest for coverage at offset %d\n", abs_coverage_offset)
+		// fmt.printf("Creating digest for coverage at offset %v\n", abs_coverage_offset)
 		digest := build_coverage_digest(gsub, abs_coverage_offset)
 		accel.coverage_digest[abs_coverage_offset] = digest
 	}
@@ -1024,7 +1024,7 @@ accelerate_chained_context_format3 :: proc(
 			coverage_offset_pos := input_offset + 2 + uint(i) * 2
 
 			if bounds_check(coverage_offset_pos + 2 >= uint(len(gsub.raw_data))) {
-				fmt.printf("Input coverage offset %d out of bounds\n", i)
+				fmt.printf("Input coverage offset %v out of bounds\n", i)
 				continue
 			}
 
@@ -1174,7 +1174,7 @@ accelerate_reverse_chained_subtable :: proc(
 	if true { unimplemented() }
 	// Reverse chained substitution only has format 1
 	if format != 1 {
-		fmt.printf("Unsupported ReverseChained subtable format: %d\n", format)
+		fmt.printf("Unsupported ReverseChained subtable format: %v\n", format)
 		return
 	}
 
